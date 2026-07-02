@@ -29,4 +29,4 @@ the UEFI firmware image.
 
 | Artifact | Description |
 | --- | --- |
-| `QEMU_EFI.fd` | UEFI firmware flash image for QEMU virt |
+| `QEMU_EFI.fd` | UEFI firmware flash image for QEMU ARM virt |
