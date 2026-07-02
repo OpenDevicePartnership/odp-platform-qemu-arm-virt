@@ -130,7 +130,7 @@ coverage-report:
 		--input $(COVERAGE_LOG) \
 		--output Build/coverage.info \
 		--source-prefix odp-secure-services \
-		--source-prefix odp-platform-qemu-sbsa
+		--source-prefix odp-platform-qemu-arm-virt
 	@$(DC_RUN) -w e2e-tests -- genhtml Build/coverage.info \
 		--ignore-errors source \
 		--output-directory Build/coverage-html \

@@ -3,8 +3,8 @@
     "dockerfile": "Dockerfile",
     "context": "..",
     "cacheFrom": [
-      "ghcr.io/opendevicepartnership/odp-platform-qemu-sbsa/devcontainer:main",
-      "ghcr.io/opendevicepartnership/odp-platform-qemu-sbsa/devcontainer:latest"
+      "ghcr.io/opendevicepartnership/odp-platform-qemu-arm-virt/devcontainer:main",
+      "ghcr.io/opendevicepartnership/odp-platform-qemu-arm-virt/devcontainer:latest"
     ]
   },
   "forwardPorts": [

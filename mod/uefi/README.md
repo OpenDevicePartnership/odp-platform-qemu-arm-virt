@@ -2,7 +2,7 @@
 
 ## Overview
 
-This module builds the UEFI firmware for the QEMU SBSA reference platform using
+This module builds the UEFI firmware for the QEMU ARM Virt reference platform using
 the Patina QEMU project. The firmware provides platform initialization, ACPI
 tables, and boot services.
 
@@ -29,4 +29,4 @@ the UEFI firmware image.
 
 | Artifact | Description |
 | --- | --- |
-| `QEMU_EFI.fd` | UEFI firmware flash image for QEMU sbsa-ref |
+| `QEMU_EFI.fd` | UEFI firmware flash image for QEMU virt |

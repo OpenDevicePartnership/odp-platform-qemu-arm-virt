@@ -1,4 +1,4 @@
-# UEFI firmware build targets for the ODP QEMU SBSA Platform.
+# UEFI firmware build targets for the ODP QEMU ARM Virt Platform.
 #
 # SPDX-License-Identifier: MIT
 #

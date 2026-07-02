@@ -41,7 +41,7 @@ fork accessible to CI) and temporarily point `.gitmodules` at that fork.
    fork so CI can fetch the commit:
 
    ```sh
-   cd /path/to/odp-platform-qemu-sbsa
+   cd /path/to/odp-platform-qemu-arm-virt
 
    # Edit .gitmodules — change the url for the submodule
    # From: https://github.com/OpenDevicePartnership/<repo>.git
@@ -86,7 +86,7 @@ Once the submodule PR is merged into the upstream repo's default branch:
 2. Switch `.gitmodules` back to the upstream URL:
 
    ```sh
-   cd /path/to/odp-platform-qemu-sbsa
+   cd /path/to/odp-platform-qemu-arm-virt
    # Restore: https://github.com/OpenDevicePartnership/<repo>.git
    git submodule sync
    git add .gitmodules secure-services/odp-secure-services

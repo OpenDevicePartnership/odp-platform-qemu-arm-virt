@@ -70,11 +70,11 @@ jobs:
       - name: Build devcontainer image
         uses: devcontainers/ci@v0.3
         with:
-          imageName: ghcr.io/opendevicepartnership/odp-platform-qemu-sbsa/devcontainer
+          imageName: ghcr.io/opendevicepartnership/odp-platform-qemu-arm-virt/devcontainer
           cacheFrom: |
-            ghcr.io/opendevicepartnership/odp-platform-qemu-sbsa/devcontainer:${{ steps.branch.outputs.tag }}
-            ghcr.io/opendevicepartnership/odp-platform-qemu-sbsa/devcontainer:main
-            ghcr.io/opendevicepartnership/odp-platform-qemu-sbsa/devcontainer:latest
+            ghcr.io/opendevicepartnership/odp-platform-qemu-arm-virt/devcontainer:${{ steps.branch.outputs.tag }}
+            ghcr.io/opendevicepartnership/odp-platform-qemu-arm-virt/devcontainer:main
+            ghcr.io/opendevicepartnership/odp-platform-qemu-arm-virt/devcontainer:latest
           platform: linux/amd64,linux/arm64
           push: filter
 
@@ -121,11 +121,11 @@ jobs:
       - name: Build devcontainer image
         uses: devcontainers/ci@v0.3
         with:
-          imageName: ghcr.io/opendevicepartnership/odp-platform-qemu-sbsa/devcontainer
+          imageName: ghcr.io/opendevicepartnership/odp-platform-qemu-arm-virt/devcontainer
           cacheFrom: |
-            ghcr.io/opendevicepartnership/odp-platform-qemu-sbsa/devcontainer:${{ steps.branch.outputs.tag }}
-            ghcr.io/opendevicepartnership/odp-platform-qemu-sbsa/devcontainer:main
-            ghcr.io/opendevicepartnership/odp-platform-qemu-sbsa/devcontainer:latest
+            ghcr.io/opendevicepartnership/odp-platform-qemu-arm-virt/devcontainer:${{ steps.branch.outputs.tag }}
+            ghcr.io/opendevicepartnership/odp-platform-qemu-arm-virt/devcontainer:main
+            ghcr.io/opendevicepartnership/odp-platform-qemu-arm-virt/devcontainer:latest
           # For build & test, we don't push the devcontainer - the "Build Multiplatform Devcontainer" job will build & push
           # the multiplatform container image.
           push: never

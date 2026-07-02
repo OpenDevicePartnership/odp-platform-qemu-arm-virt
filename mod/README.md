@@ -3,7 +3,7 @@
 ## Overview
 
 This directory contains the platform firmware modules that are built and
-combined to produce the final QEMU SBSA firmware image. Each subdirectory
+combined to produce the final QEMU ARM Virt firmware image. Each subdirectory
 represents a distinct firmware component with its own build system.
 
 ## Contents

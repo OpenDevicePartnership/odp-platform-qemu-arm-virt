@@ -1,7 +1,7 @@
-# odp-platform-qemu-sbsa
+# odp-platform-qemu-arm-virt
 
-[![Build](https://github.com/OpenDevicePartnership/odp-platform-qemu-sbsa/actions/workflows/build.yml/badge.svg)](https://github.com/OpenDevicePartnership/odp-platform-qemu-sbsa/actions/workflows/build.yml)
-[![Check Submodules](https://github.com/OpenDevicePartnership/odp-platform-qemu-sbsa/actions/workflows/check-submodules.yml/badge.svg)](https://github.com/OpenDevicePartnership/odp-platform-qemu-sbsa/actions/workflows/check-submodules.yml)
+[![Build](https://github.com/OpenDevicePartnership/odp-platform-qemu-arm-virt/actions/workflows/build.yml/badge.svg)](https://github.com/OpenDevicePartnership/odp-platform-qemu-arm-virt/actions/workflows/build.yml)
+[![Check Submodules](https://github.com/OpenDevicePartnership/odp-platform-qemu-arm-virt/actions/workflows/check-submodules.yml/badge.svg)](https://github.com/OpenDevicePartnership/odp-platform-qemu-arm-virt/actions/workflows/check-submodules.yml)
 [![LICENSE](https://img.shields.io/badge/License-MIT-blue)](./LICENSE)
 
 This repo contains all the necessary content for working on QEMU `virt` (arm64) platform
@@ -33,7 +33,7 @@ Each sub folder has its own Makefile script to build each subcomponent.
 ## Folder Structure and Content
 
 ```
-odp-platform-qemu-sbsa
+odp-platform-qemu-arm-virt
   |- .github/           Github automation support (CI/CD)
   |- .devcontainer/     Devcontainer definitions
   |- mod/               ACPI, UEFI, TF-A, Hafnium and secure service modules

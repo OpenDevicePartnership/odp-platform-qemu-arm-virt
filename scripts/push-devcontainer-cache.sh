@@ -27,7 +27,7 @@
 # Usage:
 #   ./scripts/push-devcontainer-cache.sh [IMAGE_NAME]
 #
-# IMAGE_NAME defaults to ghcr.io/<gh-user>/odp-platform-qemu-sbsa-devcontainer.
+# IMAGE_NAME defaults to ghcr.io/<gh-user>/odp-platform-qemu-arm-virt-devcontainer.
 
 set -euo pipefail
 
@@ -45,7 +45,7 @@ else
     fi
     # GHCR requires lowercase
     GH_USER="$(echo "$GH_USER" | tr '[:upper:]' '[:lower:]')"
-    IMAGE_NAME="ghcr.io/${GH_USER}/odp-platform-qemu-sbsa-devcontainer"
+    IMAGE_NAME="ghcr.io/${GH_USER}/odp-platform-qemu-arm-virt-devcontainer"
 fi
 
 echo "==> Image name: ${IMAGE_NAME}"

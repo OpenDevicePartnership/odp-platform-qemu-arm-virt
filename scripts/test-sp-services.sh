@@ -8,7 +8,7 @@
 # captured serial log.
 #
 # Run `test-sp-services.sh --help` for usage. Must be executed inside the
-# odp-platform-qemu-sbsa devcontainer (requires swtpm, qemu-system-aarch64,
+# odp-platform-qemu-arm-virt devcontainer (requires swtpm, qemu-system-aarch64,
 # timeout, tee on PATH).
 
 set -o pipefail

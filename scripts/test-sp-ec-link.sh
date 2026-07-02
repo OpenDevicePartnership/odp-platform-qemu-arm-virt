@@ -7,7 +7,7 @@
 # sets up the cleanup trap, and performs post-run verification.
 #
 # Run `test-sp-ec-link.sh --help` for usage. Must be executed inside the
-# odp-platform-qemu-sbsa devcontainer (requires swtpm, qemu-system-riscv32,
+# odp-platform-qemu-arm-virt devcontainer (requires swtpm, qemu-system-riscv32,
 # qemu-system-aarch64, defmt-print, stdbuf, setsid, timeout, pkill on PATH).
 
 set -o pipefail
@@ -36,7 +36,7 @@ Usage: test-sp-ec-link.sh --ec-elf PATH --bios-fv-dir DIR --build-dir DIR \
                   qemu-system-aarch64 as the host common args (machine,
                   cpu, mem, smbios, etc.)
 
-Must run inside the odp-platform-qemu-sbsa devcontainer.
+Must run inside the odp-platform-qemu-arm-virt devcontainer.
 
 Exits 0 on PASS, non-zero on FAILURE. The first failure mode wins:
   - Setup error (swtpm socket / EC PTY discovery) -> exits 1

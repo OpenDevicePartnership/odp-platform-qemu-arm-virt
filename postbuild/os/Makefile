@@ -13,7 +13,7 @@ OS_IMAGE_OUTPUT := build/winvos.qcow2
 OS_IMAGE_INPUT := prebuilt/ValidationOS.vhdx
 OS_IMAGE_ARTIFACT ?= os-image
 OS_IMAGE_ARTIFACT_FILE ?= os-image.vhdx
-OS_IMAGE_REPO ?= OpenDevicePartnership/odp-platform-qemu-sbsa
+OS_IMAGE_REPO ?= OpenDevicePartnership/odp-platform-qemu-arm-virt
 
 BIOS_FLASH0 := ../../$(BIOS_FV_DIR)/SECURE_FLASH0.fd
 BIOS_EFI    := ../../$(BIOS_FV_DIR)/QEMU_EFI.fd

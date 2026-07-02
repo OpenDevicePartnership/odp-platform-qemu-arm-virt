@@ -22,7 +22,7 @@ Prerequisites:
 ### Quick start
 
 ```sh
-cd /workspaces/odp-platform-qemu-sbsa
+cd /workspaces/odp-platform-qemu-arm-virt
 mod/uefi/platform/build_acpi_tables.sh
 ```
 

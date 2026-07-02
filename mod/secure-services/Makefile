@@ -1,4 +1,4 @@
-# Secure Services build targets for the ODP QEMU SBSA Platform.
+# Secure Services build targets for the ODP QEMU ARM Virt Platform.
 #
 # SPDX-License-Identifier: MIT
 #
