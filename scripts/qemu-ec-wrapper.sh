@@ -32,8 +32,11 @@
 set -euo pipefail
 
 REAL_QEMU="${REAL_QEMU:-/usr/local/bin/qemu-system-aarch64}"
-EC_I2C_SOCK="${EC_I2C_SOCK:-/tmp/qemu-ec-i2c.sock}"
-EC_GPIO_SOCK="${EC_GPIO_SOCK:-/tmp/qemu-ec-gpio.sock}"
+# Use `${VAR-default}` (no colon) so only an *unset* var gets the default path;
+# an explicitly empty var (`make run EC_I2C_SOCK=`) stays empty and disables the
+# corresponding chardev via the `[ -n ]` guards below.
+EC_I2C_SOCK="${EC_I2C_SOCK-/tmp/qemu-ec-i2c.sock}"
+EC_GPIO_SOCK="${EC_GPIO_SOCK-/tmp/qemu-ec-gpio.sock}"
 
 # Reconnect retry interval (milliseconds) for the client chardevs. Lets the
 # host survive the EC restarting underneath it and reconnect on its own.
