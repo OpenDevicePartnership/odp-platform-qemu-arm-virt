@@ -65,6 +65,18 @@ $(EC_BINARY_LOCAL): $(EC_SUBMODULE_MANIFEST) $(EC_SOURCES) ../.git/modules/odp-e
 	$(call ENDGROUP)
 	@touch $@
 
+# Build (if stale) and launch the EC firmware in QEMU, interactively with defmt
+# log decoding. Reuses the platform's qemu-ec.sh launcher, forcing it to use the
+# devcontainer's bundled qemu-system-riscv32 (via the QEMU env var) so it never
+# attempts a docker pull. The `env` prefix is how we thread QEMU through dc-run.sh,
+# which only forwards a fixed set of --remote-env vars. qemu-ec.sh serves the
+# /tmp/qemu-ec-{i2c,gpio}.sock sockets that `make run_os` connects to for EC
+# co-simulation. Runs in the foreground; Ctrl-C to stop.
+run_ec: $(EC_BINARY_LOCAL) | builder-image
+	@$(DC_RUN) -w mod/$(EC_BUILD_DIR) -- \
+		env QEMU=/usr/local/bin/qemu-system-riscv32 \
+		./qemu-ec.sh target/riscv32imac-unknown-none-elf/release/dev-qemu
+
 # ------------------------------------------------------------
 # Clean
 # ------------------------------------------------------------
@@ -79,4 +91,4 @@ ec-clean:
 		$(DC_RUN) -w mod/$(EC_BUILD_DIR) -- cargo clean; \
 	fi
 
-.PHONY: all secure-services secure-services-test uefi uefi-only ec clean ec-clean
+.PHONY: all secure-services secure-services-test uefi uefi-only ec run_ec clean ec-clean

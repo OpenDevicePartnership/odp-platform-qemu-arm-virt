@@ -1,0 +1,104 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "detail": "Build all firmware artifacts (secure-services, EC, UEFI, e2e-tests) via `make all`.",
+            "type": "shell",
+            "command": "make all",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "panel": "dedicated",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "run",
+            "detail": "Boot UEFI only (flash-only flow, no OS image) in the ARM QEMU instance.",
+            "type": "shell",
+            "command": "make run",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "panel": "dedicated",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "run_os",
+            "detail": "Build the OS image and boot UEFI + Windows in the ARM QEMU instance.",
+            "type": "shell",
+            "command": "make run_os",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "panel": "dedicated",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "run_ec",
+            "detail": "Build and run the EC firmware in the RISC-V QEMU instance.",
+            "type": "shell",
+            "command": "make run_ec",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "panel": "dedicated",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "run_os_ec",
+            "detail": "Launch run_os and run_ec together in parallel (each in its own terminal).",
+            "dependsOn": [
+                "run_os",
+                "run_ec"
+            ],
+            "dependsOrder": "parallel",
+            "problemMatcher": []
+        },
+        {
+            "label": "e2e-test",
+            "detail": "Run the end-to-end test suite against the secure partition via `make e2e-test`.",
+            "type": "shell",
+            "command": "make e2e-test",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "test",
+            "presentation": {
+                "panel": "dedicated",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "clean",
+            "detail": "Remove all build artifacts (mod, e2e-tests, OS image) via `make clean`.",
+            "type": "shell",
+            "command": "make clean",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "panel": "dedicated",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

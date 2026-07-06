@@ -39,6 +39,21 @@ run_os:
 	$(MAKE) -C mod/uefi run PATH_TO_OS=$(REPO_ROOT_IN_DEVCONTAINER)/postbuild/os/build/winvos.qcow2
 
 # ------------------------------------------------------------
+# Run the EC firmware (mod/ec/platform/dev-qemu) in RISC-V QEMU
+# ------------------------------------------------------------
+# Note: This is a separate QEMU instance from the ARM QEMU instance running UEFI+Windows.
+#
+# If wanting to connect the ARM QEMU and RISC-V QEMU instances over virtual bus,
+# run `make run_ec` in a separate terminal window alongside `make run_os`.
+#
+# Order doesn't matter, the ARM QEMU instance will attempt to reconnect to the
+# RISC-V QEMU instance periodically. However, of course if Windows attempts to
+# communicate over the virtual bus while not connected to the virtual EC,
+# it will fail.
+run_ec:
+	$(MAKE) -C mod run_ec
+
+# ------------------------------------------------------------
 # Run E2E tests against the secure partition
 # ------------------------------------------------------------
 # Two phases:
@@ -61,4 +76,4 @@ clean:
 	$(MAKE) -C mod clean
 	$(MAKE) -C e2e-tests clean
 	$(MAKE) -C postbuild/os clean
-.PHONY: all mod secure-services secure-services-test uefi ec run e2e-test run_os clean
+.PHONY: all mod secure-services secure-services-test uefi ec run run_ec e2e-test run_os clean
