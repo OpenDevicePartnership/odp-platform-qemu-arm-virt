@@ -58,17 +58,22 @@ contributors can push their own cache to speed up their PRs.
 ## Pinned external images
 
 The Dockerfile copies QEMU binaries from a builder image. This image is pinned
-by SHA digest (not `:latest`) to ensure deterministic builds:
+by SHA digest (not `:latest`) to ensure deterministic builds. The digest is set
+once at the top of the Dockerfile via the `QEMU_BUILDER_IMAGE` build arg:
 
 ```dockerfile
-COPY --from=ghcr.io/dymk/qemu-builder@sha256:f82a910a... /usr/local/bin/qemu-system-aarch64 ...
+ARG QEMU_BUILDER_IMAGE=ghcr.io/opendevicepartnership/odp-qemu-builder/qemu@sha256:376bc8a3...
+FROM ${QEMU_BUILDER_IMAGE} AS qemu-builder
+...
+COPY --from=qemu-builder /usr/local/bin/qemu-system-aarch64 /usr/local/bin/qemu-system-aarch64
 ```
 
 To update the pinned digest, pull the new image and grab its digest:
 
 ```bash
-docker pull ghcr.io/dymk/qemu-builder:latest
-docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/dymk/qemu-builder:latest
+docker pull ghcr.io/opendevicepartnership/odp-qemu-builder/qemu:latest
+docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/opendevicepartnership/odp-qemu-builder/qemu:latest
 ```
 
-Then update the `COPY --from=` lines in `.devcontainer/Dockerfile`.
+Then update the digest in the `QEMU_BUILDER_IMAGE` ARG default in
+`.devcontainer/Dockerfile`. That is the only place the digest needs to change.
