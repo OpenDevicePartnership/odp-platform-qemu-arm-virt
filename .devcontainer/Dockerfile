@@ -3,6 +3,10 @@
 # SPDX-License-Identifier: MIT
 #
 
+# Prebuilt QEMU (aarch64 + riscv32) with TPM + GTK module support.
+ARG QEMU_BUILDER_IMAGE=ghcr.io/opendevicepartnership/odp-qemu-builder/qemu@sha256:376bc8a3b84398ea6b265ddb3a1a899a879ef4b324193349a011302969a45089
+FROM ${QEMU_BUILDER_IMAGE} AS qemu-builder
+
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
 # Versions
@@ -41,6 +45,7 @@ RUN apt-get update && \
     gnupg \
     gnupg2 \
     lcov \
+    libgtk-3-0t64 \
     libssl-dev \
     lld \
     llvm \
@@ -144,8 +149,9 @@ COPY mod/uefi/patina-qemu/pip-requirements.txt /tmp/pip-requirements.txt
 RUN pip install --upgrade -r /tmp/pip-requirements.txt pip lcov_cobertura
 USER root
 
-COPY --from=ghcr.io/opendevicepartnership/odp-qemu-builder/qemu@sha256:91343c9470940727e607aa3c9515eeb58f2c4c39daf94c96aac8dee7052e61d3 /usr/local/bin/qemu-system-aarch64 /usr/local/bin/qemu-system-aarch64
-COPY --from=ghcr.io/opendevicepartnership/odp-qemu-builder/qemu@sha256:91343c9470940727e607aa3c9515eeb58f2c4c39daf94c96aac8dee7052e61d3 /usr/local/bin/qemu-system-riscv32 /usr/local/bin/qemu-system-riscv32
-COPY --from=ghcr.io/opendevicepartnership/odp-qemu-builder/qemu@sha256:91343c9470940727e607aa3c9515eeb58f2c4c39daf94c96aac8dee7052e61d3 /usr/local/share/qemu/ /usr/local/share/qemu/
+COPY --from=qemu-builder /usr/local/bin/qemu-system-aarch64 /usr/local/bin/qemu-system-aarch64
+COPY --from=qemu-builder /usr/local/bin/qemu-system-riscv32 /usr/local/bin/qemu-system-riscv32
+COPY --from=qemu-builder /usr/local/share/qemu/ /usr/local/share/qemu/
+COPY --from=qemu-builder /usr/local/lib/qemu/ /usr/local/lib/qemu/
 
 USER vscode

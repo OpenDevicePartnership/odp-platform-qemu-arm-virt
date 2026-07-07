@@ -42,6 +42,14 @@ EC_GPIO_SOCK="${EC_GPIO_SOCK-/tmp/qemu-ec-gpio.sock}"
 # host survive the EC restarting underneath it and reconnect on its own.
 EC_RECONNECT_MS="${EC_RECONNECT_MS:-1000}"
 
+# Requested display mode, chosen upstream (mod/uefi/Makefile sets QEMU_DISPLAY,
+# default "vnc"; `make run_os_windowed` overrides it to "gtk").
+QEMU_DISPLAY="${QEMU_DISPLAY:-}"
+
+# VNC bind address used when QEMU_DISPLAY=vnc. `:0` == TCP port 5900, which the
+# devcontainer forwards.
+QEMU_VNC="${QEMU_VNC:-127.0.0.1:0}"
+
 # Version/help probes must not get extra device args appended.
 for arg in "$@"; do
     case "$arg" in
@@ -58,5 +66,13 @@ fi
 if [ -n "$EC_GPIO_SOCK" ]; then
     extra+=(-chardev "socket,id=gpio0,path=${EC_GPIO_SOCK},server=off,reconnect-ms=${EC_RECONNECT_MS}")
 fi
+
+# Translate the requested display mode into the appropriate QEMU flag.
+# An empty QEMU_DISPLAY leaves QEMU to auto-select (escape hatch for direct invocation).
+case "$QEMU_DISPLAY" in
+    vnc) extra+=(-vnc "$QEMU_VNC") ;;
+    "")  : ;;
+    *)   extra+=(-display "$QEMU_DISPLAY") ;;
+esac
 
 exec "$REAL_QEMU" "$@" "${extra[@]}"

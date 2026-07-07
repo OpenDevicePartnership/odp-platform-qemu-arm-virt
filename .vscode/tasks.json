@@ -48,6 +48,20 @@
             "problemMatcher": []
         },
         {
+            "label": "run_os_windowed",
+            "detail": "Build the OS image and boot UEFI + Windows in a GTK window.",
+            "type": "shell",
+            "command": "make run_os_windowed",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "panel": "dedicated",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "run_ec",
             "detail": "Build and run the EC firmware in the RISC-V QEMU instance.",
             "type": "shell",
@@ -66,6 +80,16 @@
             "detail": "Launch run_os and run_ec together in parallel (each in its own terminal).",
             "dependsOn": [
                 "run_os",
+                "run_ec"
+            ],
+            "dependsOrder": "parallel",
+            "problemMatcher": []
+        },
+        {
+            "label": "run_os_ec_windowed",
+            "detail": "Launch run_os_windowed and run_ec together in parallel (each in its own terminal).",
+            "dependsOn": [
+                "run_os_windowed",
                 "run_ec"
             ],
             "dependsOrder": "parallel",
