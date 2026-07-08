@@ -51,7 +51,7 @@
             "label": "run_os_windowed",
             "detail": "Build the OS image and boot UEFI + Windows in a GTK window.",
             "type": "shell",
-            "command": "make run_os_windowed",
+            "command": "make run_os QEMU_DISPLAY=gtk",
             "options": {
                 "cwd": "${workspaceFolder}"
             },

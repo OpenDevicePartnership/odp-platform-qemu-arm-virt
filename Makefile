@@ -39,15 +39,6 @@ run_os:
 	$(MAKE) -C mod/uefi run PATH_TO_OS=$(REPO_ROOT_IN_DEVCONTAINER)/postbuild/os/build/winvos.qcow2
 
 # ------------------------------------------------------------
-# Build OS image and boot it in QEMU inside a GTK window
-# ------------------------------------------------------------
-# Same as run_os, but renders the display in a native GTK window instead of
-# the default headless/VNC flow.
-run_os_windowed:
-	$(MAKE) -C postbuild/os build/winvos.qcow2
-	$(MAKE) -C mod/uefi run PATH_TO_OS=$(REPO_ROOT_IN_DEVCONTAINER)/postbuild/os/build/winvos.qcow2 QEMU_DISPLAY=gtk
-
-# ------------------------------------------------------------
 # Run the EC firmware (mod/ec/platform/dev-qemu) in RISC-V QEMU
 # ------------------------------------------------------------
 # Note: This is a separate QEMU instance from the ARM QEMU instance running UEFI+Windows.
@@ -85,4 +76,4 @@ clean:
 	$(MAKE) -C mod clean
 	$(MAKE) -C e2e-tests clean
 	$(MAKE) -C postbuild/os clean
-.PHONY: all mod secure-services secure-services-test uefi ec run run_ec e2e-test run_os run_os_windowed clean
+.PHONY: all mod secure-services secure-services-test uefi ec run run_ec e2e-test run_os clean

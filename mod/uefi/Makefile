@@ -19,7 +19,7 @@ EC_GPIO_SOCK ?= /tmp/qemu-ec-gpio.sock
 
 # QEMU display mode. `vnc` (the default) keeps the flow headless over VNC
 # (port 5900, forwarded by the devcontainer); `gtk` renders in a native window
-# (used by the top-level `run_os_windowed` target); `none` disables display.
+# (e.g. `make run_os QEMU_DISPLAY=gtk`); `none` disables display.
 QEMU_DISPLAY ?= vnc
 
 # QEMU wrapper that injects the EC co-simulation chardev sockets without

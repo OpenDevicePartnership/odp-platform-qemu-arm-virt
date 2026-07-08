@@ -43,7 +43,7 @@ EC_GPIO_SOCK="${EC_GPIO_SOCK-/tmp/qemu-ec-gpio.sock}"
 EC_RECONNECT_MS="${EC_RECONNECT_MS:-1000}"
 
 # Requested display mode, chosen upstream (mod/uefi/Makefile sets QEMU_DISPLAY,
-# default "vnc"; `make run_os_windowed` overrides it to "gtk").
+# default "vnc"; `make run_os QEMU_DISPLAY=gtk` overrides it to "gtk").
 QEMU_DISPLAY="${QEMU_DISPLAY:-}"
 
 # VNC bind address used when QEMU_DISPLAY=vnc. `:0` == TCP port 5900, which the
