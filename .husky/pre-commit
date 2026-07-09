@@ -17,7 +17,7 @@ done
 echo "=== pre-commit: running clippy ==="
 for proj in $PROJECTS; do
     echo "  -> $proj"
-    (cd "$proj" && cargo clippy -- -D warnings)
+    (cd "$proj" && cargo clippy --locked -- -D warnings)
 done
 
 echo "=== pre-commit: all checks passed ==="

@@ -231,7 +231,7 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 [[package]]
 name = "mctp-rs"
 version = "0.1.0"
-source = "git+https://github.com/OpenDevicePartnership/embedded-services.git?rev=5cc395f101ad574214a49b2894c484cc19d41695#5cc395f101ad574214a49b2894c484cc19d41695"
+source = "git+https://github.com/OpenDevicePartnership/embedded-services.git?branch=main#26dd03375e94468f27f5ff7a7d6c313dfab57b97"
 dependencies = [
  "bit-register",
  "crc",
