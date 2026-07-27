@@ -1,6 +1,7 @@
-# Each non-comment line is the exact artifact name to download from the
-# OpenDevicePartnership/odp-windows-drivers repository.  The build-os
-# workflow reads this file, downloads every listed artifact, and injects
-# the ARM64 Release drivers it finds into the Validation OS image.
+# Each non-comment line is a driver name published on the latest release of the
+# OpenDevicePartnership/odp-windows-drivers repository.  The build-os workflow
+# reads this file, downloads the matching <name>.zip asset from that release,
+# unzips it, and injects the ARM64 Release drivers it finds into the Validation
+# OS image.
 driver-pl061gpio-ARM64-Release
 driver-qemui2c-ARM64-Release
