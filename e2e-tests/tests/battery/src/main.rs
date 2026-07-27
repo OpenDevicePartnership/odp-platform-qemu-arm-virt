@@ -8,7 +8,7 @@
 
 extern crate alloc;
 
-use test_support::{run_tests, send_service_command, TestResults, BATTERY_UUID};
+use test_support::{run_tests, E2eContext, BATTERY_UUID};
 use uefi::prelude::*;
 
 /// EC Battery GetBst opcode (see battery-service-relay `BatteryCmd::GetBst = 2`).
@@ -26,24 +26,20 @@ fn main() -> Status {
     run_tests(test_battery_get_bst)
 }
 
-fn test_battery_get_bst(results: &mut TestResults, our_id: u16, ec_id: u16) {
+fn test_battery_get_bst(ctx: &mut E2eContext) {
     // NOTE: the SP Battery service currently ignores the request payload and
     // always relays GetBst for battery 0 (ec-service-lib battery.rs get_bst(0)).
     // So this proves the SP↔EC GetBst relay round-trip, not SP request-opcode
     // decoding; the [opcode, id] below documents intent but is not parsed by
     // the SP today.
     let battery_id: u8 = 0;
-    let resp_payload = match send_service_command(
-        results,
+    let Some(resp_payload) = ctx.send_command(
         "battery_get_bst",
-        our_id,
-        ec_id,
         &BATTERY_UUID,
         EC_BAT_GET_BST,
         &[battery_id],
-    ) {
-        Some(p) => p,
-        None => return,
+    ) else {
+        return;
     };
 
     // Response layout (4 LE u32): state@0, rate@4, capacity@8, voltage@12.
@@ -63,20 +59,20 @@ fn test_battery_get_bst(results: &mut TestResults, our_id: u16, ec_id: u16) {
     // Exact equality: the mock is discharging only (DISCHARGING set, CHARGING /
     // CRITICAL / CHARGE_LIMITING clear), so the ACPI state word is exactly 0x1.
     if state != EXPECT_STATE_DISCHARGING {
-        results.fail("battery_get_bst", "EC BST state != DISCHARGING-only (0x1)");
+        ctx.fail("battery_get_bst", "EC BST state != DISCHARGING-only (0x1)");
         return;
     }
     if rate != EXPECT_PRESENT_RATE {
-        results.fail("battery_get_bst", "present_rate != EC mock value");
+        ctx.fail("battery_get_bst", "present_rate != EC mock value");
         return;
     }
     if capacity != EXPECT_REMAINING_CAPACITY {
-        results.fail("battery_get_bst", "remaining_capacity != EC mock value");
+        ctx.fail("battery_get_bst", "remaining_capacity != EC mock value");
         return;
     }
     if voltage != EXPECT_PRESENT_VOLTAGE {
-        results.fail("battery_get_bst", "present_voltage != EC mock value");
+        ctx.fail("battery_get_bst", "present_voltage != EC mock value");
         return;
     }
-    results.pass("battery_get_bst");
+    ctx.pass("battery_get_bst");
 }

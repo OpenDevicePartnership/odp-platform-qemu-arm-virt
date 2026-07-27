@@ -21,35 +21,32 @@ pub const BATTERY_UUID: Uuid = uuid::uuid!("25cb5207-ac36-427d-aaef-3aa78877d27e
 /// EC TimeAlarm service UUID: 23ea63ed-b593-46ea-b027-8924df88e92f
 pub const TIME_ALARM_UUID: Uuid = uuid::uuid!("23ea63ed-b593-46ea-b027-8924df88e92f");
 
-pub const FFA_MSG_SEND_DIRECT_REQ2: u64 = 0xC400008D;
-pub const FFA_MSG_SEND_DIRECT_RESP2: u64 = 0xC400008E;
+const FFA_MSG_SEND_DIRECT_REQ2: u64 = 0xC400008D;
+const FFA_MSG_SEND_DIRECT_RESP2: u64 = 0xC400008E;
 const FFA_INTERRUPT: u64 = 0x84000062;
 const FFA_YIELD: u64 = 0x8400006C;
 const FFA_RUN: u64 = 0x8400006D;
 
-/// Simple test result tracking.
+/// Pass/fail accounting shared by the setup phase and the service-ready
+/// context.
 #[derive(Default)]
-pub struct TestResults {
+struct Tally {
     passed: u32,
     failed: u32,
 }
 
-impl TestResults {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn pass(&mut self, name: &str) {
+impl Tally {
+    fn pass(&mut self, name: &str) {
         self.passed += 1;
         log::info!("[PASS] {}", name);
     }
 
-    pub fn fail(&mut self, name: &str, reason: &str) {
+    fn fail(&mut self, name: &str, reason: &str) {
         self.failed += 1;
         log::error!("[FAIL] {} - {}", name, reason);
     }
 
-    pub fn summary(&self) -> bool {
+    fn summary(&self) -> bool {
         log::info!(
             "--- Results: {} passed, {} failed ---",
             self.passed,
@@ -59,79 +56,160 @@ impl TestResults {
     }
 }
 
-/// Test FFA version negotiation (requires >= 1.2).
-pub fn test_ffa_version(results: &mut TestResults) {
-    match Version::new().exec() {
-        Ok(version) => {
-            let major = version.major();
-            let minor = version.minor();
-            log::info!("  FFA version: {}.{}", major, minor);
-            if major >= 1 && (major > 1 || minor >= 2) {
-                results.pass("ffa_version");
-            } else {
-                results.fail("ffa_version", "version too old, need >= 1.2");
+/// Setup phase: runs the standard FFA tests (version, id_get,
+/// partition_discovery) and accumulates the discovered partition IDs. Promoted
+/// to an [`E2eContext`] via [`Setup::into_context`] once both IDs are known.
+#[derive(Default)]
+struct Setup {
+    tally: Tally,
+    our_id: Option<u16>,
+    ec_id: Option<u16>,
+}
+
+impl Setup {
+    /// Test FFA version negotiation (requires >= 1.2).
+    fn test_ffa_version(&mut self) {
+        match Version::new().exec() {
+            Ok(version) => {
+                let major = version.major();
+                let minor = version.minor();
+                log::info!("  FFA version: {}.{}", major, minor);
+                if major >= 1 && (major > 1 || minor >= 2) {
+                    self.tally.pass("ffa_version");
+                } else {
+                    self.tally
+                        .fail("ffa_version", "version too old, need >= 1.2");
+                }
+            }
+            Err(e) => {
+                self.tally.fail("ffa_version", "SMC call failed");
+                log::error!("  error: {:?}", e);
             }
         }
-        Err(e) => {
-            results.fail("ffa_version", "SMC call failed");
-            log::error!("  error: {:?}", e);
+    }
+
+    /// Test FFA_ID_GET and record our partition ID.
+    fn test_ffa_id_get(&mut self) {
+        match IdGet.exec() {
+            Ok(id_result) => {
+                log::info!("  Our partition ID: {:#06x}", id_result.id);
+                self.tally.pass("ffa_id_get");
+                self.our_id = Some(id_result.id);
+            }
+            Err(e) => {
+                self.tally.fail("ffa_id_get", "SMC call failed");
+                log::error!("  error: {:?}", e);
+            }
+        }
+    }
+
+    /// Discover the EC partition by thermal UUID and record its ID.
+    fn test_partition_discovery(&mut self) {
+        match ffa::ffa_partition_info_get_regs(&THERMAL_UUID) {
+            Ok((count, partitions)) => {
+                log::debug!("  partition_info: count={}", count);
+                for (i, part) in partitions.iter().enumerate().take(count) {
+                    log::debug!(
+                        "    [{}] id={:#06x} ctx={} props={:#010x}",
+                        i,
+                        part.partition_id,
+                        part.execution_ctx_count,
+                        part.properties,
+                    );
+                }
+                if count > 0 {
+                    let id = partitions[0].partition_id;
+                    log::info!(
+                        "  Found EC partition: id={:#06x} ctx={} props={:#010x}",
+                        id,
+                        partitions[0].execution_ctx_count,
+                        partitions[0].properties,
+                    );
+                    self.tally.pass("partition_discovery");
+                    self.ec_id = Some(id);
+                } else {
+                    self.tally.fail(
+                        "partition_discovery",
+                        "no partitions found for thermal UUID",
+                    );
+                }
+            }
+            Err(e) => {
+                self.tally
+                    .fail("partition_discovery", "PARTITION_INFO_GET_REGS failed");
+                log::error!("  error: {:?}", e);
+            }
+        }
+    }
+
+    /// Promote to a service-ready [`E2eContext`] once both partition IDs exist.
+    /// On failure, returns the accumulated [`Tally`] so the caller can still
+    /// report the aggregate setup summary.
+    fn into_context(self) -> Result<E2eContext, Tally> {
+        match (self.our_id, self.ec_id) {
+            (Some(our_id), Some(ec_id)) => Ok(E2eContext {
+                tally: self.tally,
+                our_id,
+                ec_id,
+            }),
+            _ => Err(self.tally),
         }
     }
 }
 
-/// Test FFA_ID_GET and return our partition ID.
-pub fn test_ffa_id_get(results: &mut TestResults) -> Option<u16> {
-    match IdGet.exec() {
-        Ok(id_result) => {
-            log::info!("  Our partition ID: {:#06x}", id_result.id);
-            results.pass("ffa_id_get");
-            Some(id_result.id)
-        }
-        Err(e) => {
-            results.fail("ffa_id_get", "SMC call failed");
-            log::error!("  error: {:?}", e);
-            None
-        }
-    }
+/// Service-ready shared state for a single test binary: pass/fail accounting,
+/// the concrete FF-A partition IDs, and the send plumbing every service test
+/// drives. Constructed only via [`Setup::into_context`], so the send methods
+/// always have valid IDs and can never panic on a missing ID.
+pub struct E2eContext {
+    tally: Tally,
+    our_id: u16,
+    ec_id: u16,
 }
 
-/// Discover the EC partition by thermal UUID and return its ID.
-pub fn test_partition_discovery(results: &mut TestResults) -> Option<u16> {
-    match ffa::ffa_partition_info_get_regs(&THERMAL_UUID) {
-        Ok((count, partitions)) => {
-            log::debug!("  partition_info: count={}", count);
-            for (i, part) in partitions.iter().enumerate().take(count) {
-                log::debug!(
-                    "    [{}] id={:#06x} ctx={} props={:#010x}",
-                    i,
-                    part.partition_id,
-                    part.execution_ctx_count,
-                    part.properties,
-                );
-            }
-            if count > 0 {
-                let id = partitions[0].partition_id;
-                log::info!(
-                    "  Found EC partition: id={:#06x} ctx={} props={:#010x}",
-                    id,
-                    partitions[0].execution_ctx_count,
-                    partitions[0].properties,
-                );
-                results.pass("partition_discovery");
-                Some(id)
-            } else {
-                results.fail(
-                    "partition_discovery",
-                    "no partitions found for thermal UUID",
-                );
+impl E2eContext {
+    pub fn pass(&mut self, name: &str) {
+        self.tally.pass(name);
+    }
+
+    pub fn fail(&mut self, name: &str, reason: &str) {
+        self.tally.fail(name, reason);
+    }
+
+    /// Send `[command, args…]` to `uuid` on the EC partition and return the
+    /// response body, failing `test_name` when the SP sends no DIRECT_RESP2.
+    pub fn send_command(
+        &mut self,
+        test_name: &str,
+        uuid: &Uuid,
+        command: u8,
+        args: &[u8],
+    ) -> Option<DirectMessagePayload> {
+        let payload = build_request(command, args);
+        self.send_payload(test_name, uuid, &payload, "no DIRECT_RESP2 from SP")
+    }
+
+    /// Send a fully-built request `payload` to `uuid` and return the response
+    /// body. When the SP sends no DIRECT_RESP2, fail `test_name` with the
+    /// caller-supplied `no_response_reason` and return `None`.
+    pub fn send_payload(
+        &mut self,
+        test_name: &str,
+        uuid: &Uuid,
+        payload: &DirectMessagePayload,
+        no_response_reason: &str,
+    ) -> Option<DirectMessagePayload> {
+        match send_direct_req2(self.our_id, self.ec_id, uuid, payload) {
+            Some(resp) => Some(response_payload(&resp)),
+            None => {
+                self.fail(test_name, no_response_reason);
                 None
             }
         }
-        Err(e) => {
-            results.fail("partition_discovery", "PARTITION_INFO_GET_REGS failed");
-            log::error!("  error: {:?}", e);
-            None
-        }
+    }
+
+    fn summary(&self) -> bool {
+        self.tally.summary()
     }
 }
 
@@ -139,7 +217,7 @@ pub fn test_partition_discovery(results: &mut TestResults) -> Option<u16> {
 ///
 /// Returns the raw SMC response registers on success (DIRECT_RESP2), or `None`
 /// if the response FID was unexpected after retries.
-pub fn send_direct_req2(
+fn send_direct_req2(
     our_id: u16,
     dest_id: u16,
     uuid: &Uuid,
@@ -202,13 +280,13 @@ pub fn send_direct_req2(
 }
 
 /// Extract the response payload (x4..x17) from raw SMC result registers.
-pub fn response_payload(resp: &[u64; 18]) -> DirectMessagePayload {
+fn response_payload(resp: &[u64; 18]) -> DirectMessagePayload {
     DirectMessagePayload::from_iter(resp[4..18].iter().flat_map(|r| r.to_le_bytes()))
 }
 
 /// Build a `[command, args…]` FF-A Direct-Request payload, zero-padded to the
 /// full 14-register (112-byte) message payload the SP services parse.
-pub fn build_request(command: u8, args: &[u8]) -> DirectMessagePayload {
+fn build_request(command: u8, args: &[u8]) -> DirectMessagePayload {
     DirectMessagePayload::from_iter(
         core::iter::once(command)
             .chain(args.iter().copied())
@@ -217,51 +295,32 @@ pub fn build_request(command: u8, args: &[u8]) -> DirectMessagePayload {
     )
 }
 
-/// Send `command`+`args` to `uuid` on the EC partition `ec_id`, retrying
-/// YIELD/INTERRUPT, and return the response body payload. On no DIRECT_RESP2
-/// (e.g. the SP relay failed and sent no response), fail `test_name` and
-/// return `None`.
-pub fn send_service_command(
-    results: &mut TestResults,
-    test_name: &str,
-    our_id: u16,
-    ec_id: u16,
-    uuid: &Uuid,
-    command: u8,
-    args: &[u8],
-) -> Option<DirectMessagePayload> {
-    let payload = build_request(command, args);
-    match send_direct_req2(our_id, ec_id, uuid, &payload) {
-        Some(resp) => Some(response_payload(&resp)),
-        None => {
-            results.fail(test_name, "no DIRECT_RESP2 from SP");
-            None
-        }
-    }
-}
-
 /// Common test harness: initialises UEFI + UART logging, runs the standard
 /// FFA setup tests (version, id_get, partition_discovery), then invokes the
 /// caller's service-specific tests and returns the appropriate UEFI status.
 ///
-/// The closure receives `(results, our_id, ec_id)` so it can send direct
-/// requests to the EC secure partition.
-pub fn run_tests(f: impl FnOnce(&mut TestResults, u16, u16)) -> Status {
+/// The closure receives the [`E2eContext`], which owns the discovered
+/// partition IDs and the FF-A send plumbing.
+pub fn run_tests(f: impl FnOnce(&mut E2eContext)) -> Status {
     uefi::helpers::init().unwrap();
     uart_logger::init();
     log::info!("=== EC Secure Partition E2E Tests ===");
 
-    let mut results = TestResults::new();
+    let mut setup = Setup::default();
 
-    test_ffa_version(&mut results);
-    let our_id = test_ffa_id_get(&mut results);
-    let ec_id = test_partition_discovery(&mut results);
+    setup.test_ffa_version();
+    setup.test_ffa_id_get();
+    setup.test_partition_discovery();
 
-    if let (Some(src), Some(dst)) = (our_id, ec_id) {
-        f(&mut results, src, dst);
-    }
+    let ok = match setup.into_context() {
+        Ok(mut ctx) => {
+            f(&mut ctx);
+            ctx.summary()
+        }
+        Err(tally) => tally.summary(),
+    };
 
-    if results.summary() {
+    if ok {
         Status::SUCCESS
     } else {
         Status::ABORTED

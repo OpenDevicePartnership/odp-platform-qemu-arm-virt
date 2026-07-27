@@ -22,19 +22,6 @@ require_host_qemu_tools() {
         { echo "ERROR: missing required tools for host QEMU: ${missing[*]}" >&2; return 1; }
 }
 
-# require_host_serial_tee_tools
-#   Extra tools needed only when the host orchestrator streams serial
-#   through a FIFO + tee (SERIAL_TEE=1). Kept separate from
-#   require_host_qemu_tools so SERIAL_TEE=0 runs don't demand them.
-require_host_serial_tee_tools() {
-    local cmd missing=()
-    for cmd in mkfifo tee; do
-        command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
-    done
-    [ "${#missing[@]}" -eq 0 ] ||
-        { echo "ERROR: missing required tools for SERIAL_TEE=1: ${missing[*]}" >&2; return 1; }
-}
-
 # set_host_pflash_tpm_args <bios-fv-dir> <swtpm-sock> [odp-fv-file]
 #   Sets HOST_PFLASH_TPM_ARGS in the caller's scope (no `local`,
 #   matching lib/swtpm.sh's start_swtpm/SWTPM_PID pattern). The array
@@ -77,6 +64,7 @@ set_host_pflash_tpm_args() {
 #     COVERAGE_LOG     Output path for PC trace
 #     HOST_TIMEOUT     Seconds for the host QEMU run (integer)
 #     SERIAL_TEE       1 = stream serial to BOTH stdout and TEST_OUTPUT
+#                          (QEMU stdio chardev with a native logfile)
 #                      0 = file only
 #     QEMU_COMMON_ARGS Bash array of common args (machine/cpu/mem/...)
 #
@@ -87,8 +75,7 @@ set_host_pflash_tpm_args() {
 #                      the host can talk to a pre-launched EC sidecar.
 #
 #   Caller responsibilities (NOT done here):
-#     - require_swtpm_tools / require_host_qemu_tools /
-#       (if SERIAL_TEE=1) require_host_serial_tee_tools
+#     - require_swtpm_tools / require_host_qemu_tools
 #     - mkdir -p "$BUILD_DIR"
 #     - any pre-cleanup of caller-owned files
 #
@@ -100,8 +87,6 @@ run_host_efi_and_parse_results() {
     local SWTPM_SOCK="$SWTPM_DIR/swtpm-sock"
     local SWTPM_LOG="$BUILD_DIR/swtpm.log"
     local TEST_OUTPUT="$BUILD_DIR/test-output.log"
-    local QEMU_EXIT_FILE="$BUILD_DIR/qemu-exit-code"
-    local SERIAL_FIFO="$BUILD_DIR/serial.fifo"
 
     rm -f "$SWTPM_SOCK"
 
@@ -116,12 +101,10 @@ run_host_efi_and_parse_results() {
         return 1
     fi
 
-    # QEMU_PID / TEE_PID intentionally NOT local — the caller's EXIT
-    # trap reaches them on signal interruption (same pattern as
-    # SWTPM_PID). Cleared at end of normal-path so a follow-up call
-    # doesn't double-kill.
+    # QEMU_PID intentionally NOT local — the caller's EXIT trap reaches
+    # it on signal interruption (same pattern as SWTPM_PID). Cleared at
+    # end of normal-path so a follow-up call doesn't double-kill.
     QEMU_PID=""
-    TEE_PID=""
 
     set_host_pflash_tpm_args "$BIOS_FV_DIR" "$SWTPM_SOCK"
 
@@ -147,40 +130,27 @@ run_host_efi_and_parse_results() {
         )
     fi
 
+    # Host serial0 backend. SERIAL_TEE=1 uses QEMU's stdio chardev with
+    # a native logfile: guest serial streams to the orchestrator's
+    # stdout (CI log) while QEMU itself mirrors it to TEST_OUTPUT — no
+    # FIFO + tee sidecar, so $! is QEMU and `wait $QEMU_PID` surfaces
+    # timeout(1)'s 124. SERIAL_TEE=0 writes TEST_OUTPUT only.
     if [ "$SERIAL_TEE" = "1" ]; then
-        # See test-sp-services.sh history for the FIFO+tee rationale:
-        # we need $! to point at QEMU (not tee) so the caller's cleanup
-        # trap tears down QEMU and `wait $QEMU_PID` surfaces QEMU's
-        # exit code (e.g. timeout's 124).
-        rm -f "$SERIAL_FIFO"
-        if ! mkfifo "$SERIAL_FIFO"; then
-            echo "ERROR: failed to create serial FIFO at $SERIAL_FIFO" >&2
-            kill_swtpm
-            return 1
-        fi
-        tee "$TEST_OUTPUT" < "$SERIAL_FIFO" &
-        TEE_PID=$!
-        QEMU_ARGS+=(-serial stdio)
-        [ -n "${EC_PTY:-}" ] && QEMU_ARGS+=(-serial "chardev:ec-link")
-        timeout "$HOST_TIMEOUT" qemu-system-aarch64 "${QEMU_ARGS[@]}" \
-            > "$SERIAL_FIFO" 2>&1 &
-        QEMU_PID=$!
+        QEMU_ARGS+=(
+            -chardev "stdio,id=hostserial,logfile=$TEST_OUTPUT,logappend=off"
+            -serial "chardev:hostserial"
+        )
     else
         QEMU_ARGS+=(-serial "file:$TEST_OUTPUT")
-        [ -n "${EC_PTY:-}" ] && QEMU_ARGS+=(-serial "chardev:ec-link")
-        timeout "$HOST_TIMEOUT" qemu-system-aarch64 "${QEMU_ARGS[@]}" &
-        QEMU_PID=$!
     fi
+    [ -n "${EC_PTY:-}" ] && QEMU_ARGS+=(-serial "chardev:ec-link")
+
+    timeout "$HOST_TIMEOUT" qemu-system-aarch64 "${QEMU_ARGS[@]}" &
+    QEMU_PID=$!
 
     wait "$QEMU_PID"
     local QEMU_EXIT=$?
     QEMU_PID=""
-    if [ -n "${TEE_PID:-}" ]; then
-        wait "$TEE_PID" 2>/dev/null
-        TEE_PID=""
-        rm -f "$SERIAL_FIFO"
-    fi
-    echo "$QEMU_EXIT" > "$QEMU_EXIT_FILE"
 
     # Stop swtpm before result analysis (frees the socket).
     kill_swtpm

@@ -12,7 +12,7 @@
 extern crate alloc;
 
 use ffa::DirectMessagePayload;
-use test_support::{response_payload, run_tests, send_direct_req2, TestResults};
+use test_support::{run_tests, E2eContext};
 use uefi::prelude::*;
 use uuid::Uuid;
 
@@ -66,6 +66,17 @@ const TEST_CRB_SET_GO_IDLE: u64 = 3;
 #[allow(dead_code)]
 const TEST_CRB_SET_START: u64 = 4;
 
+/// A status-only case: send `(opcode, function, locality)` and assert the
+/// response status equals `expected`. `expected` is an explicit constant per
+/// case, never derived from the request.
+struct StatusCase {
+    name: &'static str,
+    opcode: u64,
+    function: u64,
+    locality: u64,
+    expected: u64,
+}
+
 /// Build a TPM request payload from (opcode, function, locality).
 ///
 /// The TPM service reads three registers from the FF-A payload:
@@ -83,246 +94,209 @@ fn tpm_request(opcode: u64, function: u64, locality: u64) -> DirectMessagePayloa
     DirectMessagePayload::from_iter(bytes)
 }
 
-/// Send a TPM request and return (status, payload) from the response.
+/// Send a fully-built TPM `payload` and return the response body, failing
+/// `test_name` with TPM's distinct diagnostic when the SP's response FID is
+/// unexpected.
 fn tpm_send(
-    results: &mut TestResults,
+    ctx: &mut E2eContext,
     test_name: &str,
-    our_id: u16,
-    ec_id: u16,
     payload: &DirectMessagePayload,
-) -> Option<(u64, u64)> {
-    let resp = match send_direct_req2(our_id, ec_id, &TPM_UUID, payload) {
-        Some(r) => r,
-        None => {
-            results.fail(test_name, "unexpected response FID");
-            return None;
-        }
-    };
-    let rp = response_payload(&resp);
-    Some((rp.u64_at(0), rp.u64_at(8)))
+) -> Option<DirectMessagePayload> {
+    ctx.send_payload(test_name, &TPM_UUID, payload, "unexpected response FID")
 }
 
-/// Send a TPM request and assert the response status matches `expected`.
-#[allow(clippy::too_many_arguments)]
-fn expect_status(
-    results: &mut TestResults,
-    test_name: &str,
-    our_id: u16,
-    ec_id: u16,
-    opcode: u64,
-    function: u64,
-    locality: u64,
-    expected: u64,
-) {
-    let payload = tpm_request(opcode, function, locality);
-    let (status, _) = match tpm_send(results, test_name, our_id, ec_id, &payload) {
-        Some(v) => v,
-        None => return,
-    };
-    log::info!("  {}: status={:#x}", test_name, status);
-    if status == expected {
-        results.pass(test_name);
-    } else {
-        results.fail(test_name, "unexpected status");
+/// Run status-only cases in order, asserting each response status. Preserves
+/// ordered state boundaries: callers pass one slice per state group.
+fn run_status_cases(ctx: &mut E2eContext, cases: &[StatusCase]) {
+    for case in cases {
+        let payload = tpm_request(case.opcode, case.function, case.locality);
+        let Some(resp) = tpm_send(ctx, case.name, &payload) else {
+            continue;
+        };
+        let status = resp.u64_at(0);
+        log::info!("  {}: status={:#x}", case.name, status);
+        if status == case.expected {
+            ctx.pass(case.name);
+        } else {
+            ctx.fail(case.name, "unexpected status");
+        }
     }
 }
 
-#[entry]
-fn main() -> Status {
-    run_tests(run_tpm_tests)
-}
-
-fn run_tpm_tests(results: &mut TestResults, our_id: u16, ec_id: u16) {
-    // Stateless tests (don't depend on or change locality state)
-    test_get_interface_version(results, our_id, ec_id);
+// Stateless cases (don't depend on or change locality state).
+const STATELESS_CASES: &[StatusCase] = &[
     // GetFeatureInfo is not implemented — should return NOT_SUP.
-    expect_status(
-        results,
-        "tpm_get_feature_info",
-        our_id,
-        ec_id,
-        TPM2_FFA_GET_FEATURE_INFO,
-        0,
-        0,
-        TPM2_FFA_NOT_SUP,
-    );
+    StatusCase {
+        name: "tpm_get_feature_info",
+        opcode: TPM2_FFA_GET_FEATURE_INFO,
+        function: 0,
+        locality: 0,
+        expected: TPM2_FFA_NOT_SUP,
+    },
     // An unknown opcode should return NO_FUNC.
-    expect_status(
-        results,
-        "tpm_invalid_opcode",
-        our_id,
-        ec_id,
-        0xDEAD_BEEF,
-        0,
-        0,
-        TPM2_FFA_NO_FUNC,
-    );
+    StatusCase {
+        name: "tpm_invalid_opcode",
+        opcode: 0xDEAD_BEEF,
+        function: 0,
+        locality: 0,
+        expected: TPM2_FFA_NO_FUNC,
+    },
     // Start(COMMAND) on closed locality 2 → DENIED (per DEN0138, DENIED is
     // for "TPM has disabled requests at this locality"). Localities 2..=4
     // are closed by default after SP init; localities 0..=1 are open.
-    expect_status(
-        results,
-        "tpm_start_closed_locality",
-        our_id,
-        ec_id,
-        TPM2_FFA_START,
-        START_QUALIFIER_COMMAND,
-        2,
-        TPM2_FFA_DENIED,
-    );
+    StatusCase {
+        name: "tpm_start_closed_locality",
+        opcode: TPM2_FFA_START,
+        function: START_QUALIFIER_COMMAND,
+        locality: 2,
+        expected: TPM2_FFA_DENIED,
+    },
     // Start with out-of-range locality (>= 5) → INV_ARG.
-    expect_status(
-        results,
-        "tpm_start_invalid_locality",
-        our_id,
-        ec_id,
-        TPM2_FFA_START,
-        START_QUALIFIER_COMMAND,
-        5,
-        TPM2_FFA_INV_ARG,
-    );
+    StatusCase {
+        name: "tpm_start_invalid_locality",
+        opcode: TPM2_FFA_START,
+        function: START_QUALIFIER_COMMAND,
+        locality: 5,
+        expected: TPM2_FFA_INV_ARG,
+    },
     // Start(LOCALITY) on closed locality 2 → DENIED (same reasoning as above).
-    expect_status(
-        results,
-        "tpm_start_locality_qualifier_closed",
-        our_id,
-        ec_id,
-        TPM2_FFA_START,
-        START_QUALIFIER_LOCALITY,
-        2,
-        TPM2_FFA_DENIED,
-    );
-    // These tests share one SP instance and run in order, forming a
-    // register → unregister → finish sequence.
-    //
+    StatusCase {
+        name: "tpm_start_locality_qualifier_closed",
+        opcode: TPM2_FFA_START,
+        function: START_QUALIFIER_LOCALITY,
+        locality: 2,
+        expected: TPM2_FFA_DENIED,
+    },
+];
+
+// These share one SP instance and run in order, forming a
+// register → unregister → finish sequence.
+const NOTIFICATION_SEQUENCE: &[StatusCase] = &[
     // RegisterForNotification (no prior registration) → OK.
-    expect_status(
-        results,
-        "tpm_register_for_notification",
-        our_id,
-        ec_id,
-        TPM2_FFA_REGISTER_FOR_NOTIFICATION,
-        0,
-        0,
-        TPM2_FFA_SUCCESS_OK,
-    );
-    // UnregisterForNotification (registered by the test above) → OK.
-    expect_status(
-        results,
-        "tpm_unregister_for_notification",
-        our_id,
-        ec_id,
-        TPM2_FFA_UNREGISTER_FOR_NOTIFICATION,
-        0,
-        0,
-        TPM2_FFA_SUCCESS_OK,
-    );
+    StatusCase {
+        name: "tpm_register_for_notification",
+        opcode: TPM2_FFA_REGISTER_FOR_NOTIFICATION,
+        function: 0,
+        locality: 0,
+        expected: TPM2_FFA_SUCCESS_OK,
+    },
+    // UnregisterForNotification (registered by the case above) → OK.
+    StatusCase {
+        name: "tpm_unregister_for_notification",
+        opcode: TPM2_FFA_UNREGISTER_FOR_NOTIFICATION,
+        function: 0,
+        locality: 0,
+        expected: TPM2_FFA_SUCCESS_OK,
+    },
     // FinishNotified (no active registration after the unregister above) →
     // DENIED.
-    expect_status(
-        results,
-        "tpm_finish_notified",
-        our_id,
-        ec_id,
-        TPM2_FFA_FINISH_NOTIFIED,
-        0,
-        0,
-        TPM2_FFA_DENIED,
-    );
+    StatusCase {
+        name: "tpm_finish_notified",
+        opcode: TPM2_FFA_FINISH_NOTIFIED,
+        function: 0,
+        locality: 0,
+        expected: TPM2_FFA_DENIED,
+    },
+];
 
-    // ManageLocality tests (SP built with test-bypass-locality-check)
+// ManageLocality tests (SP built with test-bypass-locality-check).
+const MANAGE_LOCALITY_CASES: &[StatusCase] = &[
     // ManageLocality(OPEN, locality=0) should succeed.
-    expect_status(
-        results,
-        "tpm_manage_locality_open",
-        our_id,
-        ec_id,
-        TPM2_FFA_MANAGE_LOCALITY,
-        MANAGE_LOCALITY_OPEN,
-        0,
-        TPM2_FFA_SUCCESS_OK,
-    );
+    StatusCase {
+        name: "tpm_manage_locality_open",
+        opcode: TPM2_FFA_MANAGE_LOCALITY,
+        function: MANAGE_LOCALITY_OPEN,
+        locality: 0,
+        expected: TPM2_FFA_SUCCESS_OK,
+    },
     // ManageLocality with invalid operation (not OPEN or CLOSE) → INV_ARG.
-    expect_status(
-        results,
-        "tpm_manage_locality_invalid_op",
-        our_id,
-        ec_id,
-        TPM2_FFA_MANAGE_LOCALITY,
-        0x2,
-        0,
-        TPM2_FFA_INV_ARG,
-    );
+    StatusCase {
+        name: "tpm_manage_locality_invalid_op",
+        opcode: TPM2_FFA_MANAGE_LOCALITY,
+        function: 0x2,
+        locality: 0,
+        expected: TPM2_FFA_INV_ARG,
+    },
+];
 
-    // Tests requiring open locality (locality 0 was opened above)
+// Cases requiring open locality (locality 0 was opened above).
+const OPEN_LOCALITY_CASES: &[StatusCase] = &[
     // Start(COMMAND) on open locality with no command queued in CRB
     // → INV_CRB_CTRL_DATA (per DEN0138, the CRB control data is invalid
     // because no operation is requested). Note: the test name is historical;
     // in the live SP+EC scenario, active_locality is set to 0 by the EC's
     // earlier Start(LOCALITY,0) traffic, so this exercises the "no command
     // queued" path rather than the "locality mismatch" branch.
-    expect_status(
-        results,
-        "tpm_start_command_locality_mismatch",
-        our_id,
-        ec_id,
-        TPM2_FFA_START,
-        START_QUALIFIER_COMMAND,
-        0,
-        TPM2_FFA_INV_CRB_CTRL_DATA,
-    );
+    StatusCase {
+        name: "tpm_start_command_locality_mismatch",
+        opcode: TPM2_FFA_START,
+        function: START_QUALIFIER_COMMAND,
+        locality: 0,
+        expected: TPM2_FFA_INV_CRB_CTRL_DATA,
+    },
     // Start with invalid function qualifier → INV_ARG.
-    expect_status(
-        results,
-        "tpm_start_invalid_function",
-        our_id,
-        ec_id,
-        TPM2_FFA_START,
-        0x2,
-        0,
-        TPM2_FFA_INV_ARG,
-    );
+    StatusCase {
+        name: "tpm_start_invalid_function",
+        opcode: TPM2_FFA_START,
+        function: 0x2,
+        locality: 0,
+        expected: TPM2_FFA_INV_ARG,
+    },
     // Start(LOCALITY) with no CRB request/relinquish bits → INV_CRB_CTRL_DATA
     // (per DEN0138, the locality_control register has no operation requested).
-    expect_status(
-        results,
-        "tpm_start_locality_no_crb_bits",
-        our_id,
-        ec_id,
-        TPM2_FFA_START,
-        START_QUALIFIER_LOCALITY,
-        0,
-        TPM2_FFA_INV_CRB_CTRL_DATA,
-    );
+    StatusCase {
+        name: "tpm_start_locality_no_crb_bits",
+        opcode: TPM2_FFA_START,
+        function: START_QUALIFIER_LOCALITY,
+        locality: 0,
+        expected: TPM2_FFA_INV_CRB_CTRL_DATA,
+    },
     // Start(COMMAND) with no command queued in CRB → INV_CRB_CTRL_DATA.
     // Same code path as tpm_start_command_locality_mismatch above.
-    expect_status(
-        results,
-        "tpm_start_command_idle_no_bits",
-        our_id,
-        ec_id,
-        TPM2_FFA_START,
-        START_QUALIFIER_COMMAND,
-        0,
-        TPM2_FFA_INV_CRB_CTRL_DATA,
-    );
+    StatusCase {
+        name: "tpm_start_command_idle_no_bits",
+        opcode: TPM2_FFA_START,
+        function: START_QUALIFIER_COMMAND,
+        locality: 0,
+        expected: TPM2_FFA_INV_CRB_CTRL_DATA,
+    },
+];
 
-    // CRB state machine tests — exercises handle_command + tpm_sst
+// Close locality.
+const LOCALITY_CLOSE_CASE: &[StatusCase] = &[StatusCase {
+    name: "tpm_manage_locality_close",
+    opcode: TPM2_FFA_MANAGE_LOCALITY,
+    function: MANAGE_LOCALITY_CLOSE,
+    locality: 0,
+    expected: TPM2_FFA_SUCCESS_OK,
+}];
+
+#[entry]
+fn main() -> Status {
+    run_tests(run_tpm_tests)
+}
+
+fn run_tpm_tests(ctx: &mut E2eContext) {
+    // Stateless tests (don't depend on or change locality state).
+    test_get_interface_version(ctx);
+    run_status_cases(ctx, STATELESS_CASES);
+
+    // register → unregister → finish sequence.
+    run_status_cases(ctx, NOTIFICATION_SEQUENCE);
+
+    // ManageLocality open + invalid op.
+    run_status_cases(ctx, MANAGE_LOCALITY_CASES);
+
+    // Cases requiring open locality (locality 0 was opened above).
+    run_status_cases(ctx, OPEN_LOCALITY_CASES);
+
+    // CRB state machine tests — exercises handle_command + tpm_sst.
     // These use the test-only TestWriteCrb opcode to set internal CRB bits,
     // then trigger the state machine via Start(LOCALITY/COMMAND).
-    test_crb_state_machine(results, our_id, ec_id);
+    test_crb_state_machine(ctx);
 
-    // Close locality
-    expect_status(
-        results,
-        "tpm_manage_locality_close",
-        our_id,
-        ec_id,
-        TPM2_FFA_MANAGE_LOCALITY,
-        MANAGE_LOCALITY_CLOSE,
-        0,
-        TPM2_FFA_SUCCESS_OK,
-    );
+    // Close locality.
+    run_status_cases(ctx, LOCALITY_CLOSE_CASE);
 }
 
 // ---------------------------------------------------------------------------
@@ -330,18 +304,13 @@ fn run_tpm_tests(results: &mut TestResults, our_id: u16, ec_id: u16) {
 // ---------------------------------------------------------------------------
 
 /// Verify GetInterfaceVersion returns success and the correct v1.0 version.
-fn test_get_interface_version(results: &mut TestResults, our_id: u16, ec_id: u16) {
+fn test_get_interface_version(ctx: &mut E2eContext) {
     let payload = tpm_request(TPM2_FFA_GET_INTERFACE_VERSION, 0, 0);
-    let (status, version) = match tpm_send(
-        results,
-        "tpm_get_interface_version",
-        our_id,
-        ec_id,
-        &payload,
-    ) {
-        Some(v) => v,
-        None => return,
+    let Some(resp) = tpm_send(ctx, "tpm_get_interface_version", &payload) else {
+        return;
     };
+    let status = resp.u64_at(0);
+    let version = resp.u64_at(8);
 
     log::info!(
         "  get_interface_version: status={:#x}, version={:#x}",
@@ -350,38 +319,30 @@ fn test_get_interface_version(results: &mut TestResults, our_id: u16, ec_id: u16
     );
 
     if status != TPM2_FFA_SUCCESS_OK_RESULTS {
-        results.fail("tpm_get_interface_version", "unexpected status");
+        ctx.fail("tpm_get_interface_version", "unexpected status");
         return;
     }
 
     // Version should be (major << 16) | minor = (1 << 16) | 0 = 0x10000
     if version != 0x1_0000 {
-        results.fail(
+        ctx.fail(
             "tpm_get_interface_version",
             "expected version 1.0 (0x10000)",
         );
         return;
     }
 
-    results.pass("tpm_get_interface_version");
+    ctx.pass("tpm_get_interface_version");
 }
 
 /// Helper: send TestWriteCrb and assert OK.
-fn test_write_crb(
-    results: &mut TestResults,
-    test_name: &str,
-    our_id: u16,
-    ec_id: u16,
-    operation: u64,
-    locality: u64,
-) -> bool {
+fn test_write_crb(ctx: &mut E2eContext, test_name: &str, operation: u64, locality: u64) -> bool {
     let payload = tpm_request(TPM2_FFA_TEST_WRITE_CRB, operation, locality);
-    let (status, _) = match tpm_send(results, test_name, our_id, ec_id, &payload) {
-        Some(v) => v,
-        None => return false,
+    let Some(resp) = tpm_send(ctx, test_name, &payload) else {
+        return false;
     };
-    if status != TPM2_FFA_SUCCESS_OK {
-        results.fail(test_name, "TestWriteCrb failed");
+    if resp.u64_at(0) != TPM2_FFA_SUCCESS_OK {
+        ctx.fail(test_name, "TestWriteCrb failed");
         return false;
     }
     true
@@ -394,108 +355,74 @@ fn test_write_crb(
 ///   2. Set CMD_READY → Start(COMMAND) → handle_command IDLE→READY (sst.cmd_ready)
 ///   3. Set GO_IDLE → Start(COMMAND) → handle_command READY→IDLE (sst.go_idle)
 ///   4. Set RELINQUISH → Start(LOCALITY) → sst.locality_relinquish → active=NONE
-fn test_crb_state_machine(results: &mut TestResults, our_id: u16, ec_id: u16) {
+fn test_crb_state_machine(ctx: &mut E2eContext) {
     // -- Step 1: Request locality 0 via sst.locality_request ---------------
-    if !test_write_crb(
-        results,
-        "tpm_crb_sm",
-        our_id,
-        ec_id,
-        TEST_CRB_SET_REQUEST_ACCESS,
-        0,
-    ) {
+    if !test_write_crb(ctx, "tpm_crb_sm", TEST_CRB_SET_REQUEST_ACCESS, 0) {
         return;
     }
     let payload = tpm_request(TPM2_FFA_START, START_QUALIFIER_LOCALITY, 0);
-    let (status, _) = match tpm_send(results, "tpm_crb_locality_request", our_id, ec_id, &payload) {
-        Some(v) => v,
-        None => return,
+    let Some(resp) = tpm_send(ctx, "tpm_crb_locality_request", &payload) else {
+        return;
     };
+    let status = resp.u64_at(0);
     log::info!("  crb_locality_request: status={:#x}", status);
     if status != TPM2_FFA_SUCCESS_OK {
-        results.fail(
+        ctx.fail(
             "tpm_crb_locality_request",
             "expected OK from locality request",
         );
         return;
     }
-    results.pass("tpm_crb_locality_request");
+    ctx.pass("tpm_crb_locality_request");
 
     // -- Step 2: IDLE → READY via sst.cmd_ready ----------------------------
-    if !test_write_crb(
-        results,
-        "tpm_crb_sm",
-        our_id,
-        ec_id,
-        TEST_CRB_SET_CMD_READY,
-        0,
-    ) {
+    if !test_write_crb(ctx, "tpm_crb_sm", TEST_CRB_SET_CMD_READY, 0) {
         return;
     }
     let payload = tpm_request(TPM2_FFA_START, START_QUALIFIER_COMMAND, 0);
-    let (status, _) = match tpm_send(results, "tpm_crb_idle_to_ready", our_id, ec_id, &payload) {
-        Some(v) => v,
-        None => return,
+    let Some(resp) = tpm_send(ctx, "tpm_crb_idle_to_ready", &payload) else {
+        return;
     };
+    let status = resp.u64_at(0);
     log::info!("  crb_idle_to_ready: status={:#x}", status);
     if status != TPM2_FFA_SUCCESS_OK {
-        results.fail("tpm_crb_idle_to_ready", "expected OK for IDLE→READY");
+        ctx.fail("tpm_crb_idle_to_ready", "expected OK for IDLE→READY");
         return;
     }
-    results.pass("tpm_crb_idle_to_ready");
+    ctx.pass("tpm_crb_idle_to_ready");
 
     // -- Step 3: READY → IDLE via sst.go_idle ------------------------------
-    if !test_write_crb(
-        results,
-        "tpm_crb_sm",
-        our_id,
-        ec_id,
-        TEST_CRB_SET_GO_IDLE,
-        0,
-    ) {
+    if !test_write_crb(ctx, "tpm_crb_sm", TEST_CRB_SET_GO_IDLE, 0) {
         return;
     }
     let payload = tpm_request(TPM2_FFA_START, START_QUALIFIER_COMMAND, 0);
-    let (status, _) = match tpm_send(results, "tpm_crb_ready_to_idle", our_id, ec_id, &payload) {
-        Some(v) => v,
-        None => return,
+    let Some(resp) = tpm_send(ctx, "tpm_crb_ready_to_idle", &payload) else {
+        return;
     };
+    let status = resp.u64_at(0);
     log::info!("  crb_ready_to_idle: status={:#x}", status);
     if status != TPM2_FFA_SUCCESS_OK {
-        results.fail("tpm_crb_ready_to_idle", "expected OK for READY→IDLE");
+        ctx.fail("tpm_crb_ready_to_idle", "expected OK for READY→IDLE");
         return;
     }
-    results.pass("tpm_crb_ready_to_idle");
+    ctx.pass("tpm_crb_ready_to_idle");
 
     // -- Step 4: Relinquish locality 0 via sst.locality_relinquish ---------
-    if !test_write_crb(
-        results,
-        "tpm_crb_sm",
-        our_id,
-        ec_id,
-        TEST_CRB_SET_RELINQUISH,
-        0,
-    ) {
+    if !test_write_crb(ctx, "tpm_crb_sm", TEST_CRB_SET_RELINQUISH, 0) {
         return;
     }
     let payload = tpm_request(TPM2_FFA_START, START_QUALIFIER_LOCALITY, 0);
-    let (status, _) = match tpm_send(
-        results,
-        "tpm_crb_locality_relinquish",
-        our_id,
-        ec_id,
-        &payload,
-    ) {
-        Some(v) => v,
-        None => return,
+    let Some(resp) = tpm_send(ctx, "tpm_crb_locality_relinquish", &payload) else {
+        return;
     };
+    let status = resp.u64_at(0);
     log::info!("  crb_locality_relinquish: status={:#x}", status);
     if status != TPM2_FFA_SUCCESS_OK {
-        results.fail(
+        ctx.fail(
             "tpm_crb_locality_relinquish",
             "expected OK from locality relinquish",
         );
         return;
     }
-    results.pass("tpm_crb_locality_relinquish");
+    ctx.pass("tpm_crb_locality_relinquish");
 }

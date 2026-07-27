@@ -9,7 +9,7 @@
 extern crate alloc;
 
 use ffa::DirectMessagePayload;
-use test_support::{run_tests, send_service_command, TestResults, TIME_ALARM_UUID};
+use test_support::{run_tests, E2eContext, TIME_ALARM_UUID};
 use uefi::{boot, prelude::*};
 
 #[repr(u8)]
@@ -94,17 +94,14 @@ fn main() -> Status {
     run_tests(test_time_alarm_command_family)
 }
 
-fn test_time_alarm_command_family(results: &mut TestResults, our_id: u16, ec_id: u16) {
-    test_get_real_time(results, our_id, ec_id);
-    test_timer_value_round_trip(results, our_id, ec_id);
+fn test_time_alarm_command_family(ctx: &mut E2eContext) {
+    test_get_real_time(ctx);
+    test_timer_value_round_trip(ctx);
 }
 
-fn get_real_time(results: &mut TestResults, our_id: u16, ec_id: u16) -> Option<Timestamp> {
-    let payload = send_service_command(
-        results,
+fn get_real_time(ctx: &mut E2eContext) -> Option<Timestamp> {
+    let payload = ctx.send_command(
         "time_alarm_get_real_time",
-        our_id,
-        ec_id,
         &TIME_ALARM_UUID,
         TimeAlarmCommand::GetRealTime.into(),
         &[],
@@ -112,18 +109,10 @@ fn get_real_time(results: &mut TestResults, our_id: u16, ec_id: u16) -> Option<T
     Some(Timestamp::parse(&payload))
 }
 
-fn get_timer_value(
-    results: &mut TestResults,
-    test_name: &str,
-    our_id: u16,
-    ec_id: u16,
-) -> Option<u32> {
+fn get_timer_value(ctx: &mut E2eContext, test_name: &str) -> Option<u32> {
     let args = AC_TIMER_ID.to_le_bytes();
-    let payload = send_service_command(
-        results,
+    let payload = ctx.send_command(
         test_name,
-        our_id,
-        ec_id,
         &TIME_ALARM_UUID,
         TimeAlarmCommand::GetTimerValue.into(),
         &args,
@@ -131,12 +120,12 @@ fn get_timer_value(
     Some(payload.u32_at(0))
 }
 
-fn test_get_real_time(results: &mut TestResults, our_id: u16, ec_id: u16) {
-    let Some(first) = get_real_time(results, our_id, ec_id) else {
+fn test_get_real_time(ctx: &mut E2eContext) {
+    let Some(first) = get_real_time(ctx) else {
         return;
     };
     if !first.is_expected_mock_shape() {
-        results.fail(
+        ctx.fail(
             "time_alarm_get_real_time",
             "first timestamp does not match EC mock shape",
         );
@@ -145,11 +134,11 @@ fn test_get_real_time(results: &mut TestResults, our_id: u16, ec_id: u16) {
 
     boot::stall(STALL_MICROSECONDS);
 
-    let Some(second) = get_real_time(results, our_id, ec_id) else {
+    let Some(second) = get_real_time(ctx) else {
         return;
     };
     if !second.is_expected_mock_shape() {
-        results.fail(
+        ctx.fail(
             "time_alarm_get_real_time",
             "second timestamp does not match EC mock shape",
         );
@@ -157,7 +146,7 @@ fn test_get_real_time(results: &mut TestResults, our_id: u16, ec_id: u16) {
     }
 
     let Some(delta) = second.seconds_of_day().checked_sub(first.seconds_of_day()) else {
-        results.fail("time_alarm_get_real_time", "EC time moved backwards");
+        ctx.fail("time_alarm_get_real_time", "EC time moved backwards");
         return;
     };
 
@@ -176,27 +165,24 @@ fn test_get_real_time(results: &mut TestResults, our_id: u16, ec_id: u16) {
     );
 
     if !(2..=6).contains(&delta) {
-        results.fail(
+        ctx.fail(
             "time_alarm_get_real_time",
             "EC clock delta outside 2..=6 seconds",
         );
         return;
     }
 
-    results.pass("time_alarm_get_real_time");
+    ctx.pass("time_alarm_get_real_time");
 }
 
-fn test_timer_value_round_trip(results: &mut TestResults, our_id: u16, ec_id: u16) {
+fn test_timer_value_round_trip(ctx: &mut E2eContext) {
     const NAME: &str = "time_alarm_timer_set_get";
 
     let mut set_args = [0u8; 8];
     set_args[..4].copy_from_slice(&AC_TIMER_ID.to_le_bytes());
     set_args[4..].copy_from_slice(&TIMER_SECONDS.to_le_bytes());
-    let Some(set_response) = send_service_command(
-        results,
+    let Some(set_response) = ctx.send_command(
         NAME,
-        our_id,
-        ec_id,
         &TIME_ALARM_UUID,
         TimeAlarmCommand::SetTimerValue.into(),
         &set_args,
@@ -206,11 +192,11 @@ fn test_timer_value_round_trip(results: &mut TestResults, our_id: u16, ec_id: u1
     let status = set_response.u32_at(0);
     if status != 0 {
         log::error!("  SetTimerValue: status={}", status);
-        results.fail(NAME, "SetTimerValue returned non-zero status");
+        ctx.fail(NAME, "SetTimerValue returned non-zero status");
         return;
     }
 
-    let Some(first) = get_timer_value(results, NAME, our_id, ec_id) else {
+    let Some(first) = get_timer_value(ctx, NAME) else {
         return;
     };
     if !(MIN_INITIAL_SECONDS..=TIMER_SECONDS).contains(&first) {
@@ -220,13 +206,13 @@ fn test_timer_value_round_trip(results: &mut TestResults, our_id: u16, ec_id: u1
             MIN_INITIAL_SECONDS,
             TIMER_SECONDS,
         );
-        results.fail(NAME, "initial timer value outside 290..=300 seconds");
+        ctx.fail(NAME, "initial timer value outside 290..=300 seconds");
         return;
     }
 
     boot::stall(STALL_MICROSECONDS);
 
-    let Some(second) = get_timer_value(results, NAME, our_id, ec_id) else {
+    let Some(second) = get_timer_value(ctx, NAME) else {
         return;
     };
     let Some(delta) = first.checked_sub(second) else {
@@ -235,7 +221,7 @@ fn test_timer_value_round_trip(results: &mut TestResults, our_id: u16, ec_id: u1
             first,
             second,
         );
-        results.fail(NAME, "EC timer value increased");
+        ctx.fail(NAME, "EC timer value increased");
         return;
     };
 
@@ -247,9 +233,9 @@ fn test_timer_value_round_trip(results: &mut TestResults, our_id: u16, ec_id: u1
     );
 
     if !(MIN_COUNTDOWN_DELTA..=MAX_COUNTDOWN_DELTA).contains(&delta) {
-        results.fail(NAME, "EC timer delta outside 2..=6 seconds");
+        ctx.fail(NAME, "EC timer delta outside 2..=6 seconds");
         return;
     }
 
-    results.pass(NAME);
+    ctx.pass(NAME);
 }
