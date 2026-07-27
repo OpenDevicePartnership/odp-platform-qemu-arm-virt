@@ -3,7 +3,9 @@
 	url = https://github.com/OpenDevicePartnership/patina-qemu.git
 [submodule "odp-secure-services"]
 	path = mod/secure-services/odp-secure-services
-	url = https://github.com/OpenDevicePartnership/odp-secure-services.git
+	# TODO: restore to OpenDevicePartnership URL before merging
+	url = https://github.com/dymk/odp-secure-services.git
 [submodule "odp-embedded-controller"]
 	path = mod/ec
-	url = https://github.com/OpenDevicePartnership/odp-embedded-controller.git
+	# TODO: restore to OpenDevicePartnership URL before merging
+	url = https://github.com/dymk/odp-embedded-controller.git
