@@ -14,12 +14,14 @@ use uefi::prelude::*;
 /// EC Battery GetBst opcode (see battery-service-relay `BatteryCmd::GetBst = 2`).
 const EC_BAT_GET_BST: u8 = 0x02;
 
-// EC dev-qemu MockFuelGauge (3S, ~80% SoC, discharging) BST values, mapped by
-// the EC's compute_bst. These are fixed mock constants, asserted exactly.
+// EC dev-qemu MockFuelGauge BST values, mapped by the EC's compute_bst. These
+// are fixed mock constants, asserted exactly. State, rate and capacity are the
+// same across both fuel-gauge profiles; only the pack voltage differs.
 const EXPECT_STATE_DISCHARGING: u32 = 0x1; // ACPI BatteryState::DISCHARGING = 1<<0
 const EXPECT_PRESENT_RATE: u32 = 1500; // |−1500 mA| discharge
 const EXPECT_REMAINING_CAPACITY: u32 = 2304; // mAh
-const EXPECT_PRESENT_VOLTAGE: u32 = 11850; // mV (3 × 3950)
+const EXPECT_VOLTAGE_3S: u32 = 11850; // mV (3 × 3950), battery 0
+const EXPECT_VOLTAGE_2S: u32 = 7900; // mV (2 × 3950), battery 1
 
 #[entry]
 fn main() -> Status {
@@ -27,18 +29,15 @@ fn main() -> Status {
 }
 
 fn test_battery_get_bst(ctx: &mut E2eContext) {
-    // NOTE: the SP Battery service currently ignores the request payload and
-    // always relays GetBst for battery 0 (ec-service-lib battery.rs get_bst(0)).
-    // So this proves the SP↔EC GetBst relay round-trip, not SP request-opcode
-    // decoding; the [opcode, id] below documents intent but is not parsed by
-    // the SP today.
-    let battery_id: u8 = 0;
-    let Some(resp_payload) = ctx.send_command(
-        "battery_get_bst",
-        &BATTERY_UUID,
-        EC_BAT_GET_BST,
-        &[battery_id],
-    ) else {
+    // Battery 0 is the 3S pack; battery 1 the 2S pack. Both share state/rate/
+    // capacity and differ only in pack voltage, so the id must select the pack.
+    check_battery_bst(ctx, "battery0_get_bst", 0, EXPECT_VOLTAGE_3S);
+    check_battery_bst(ctx, "battery1_get_bst", 1, EXPECT_VOLTAGE_2S);
+}
+
+fn check_battery_bst(ctx: &mut E2eContext, name: &str, battery_id: u8, expect_voltage: u32) {
+    let Some(resp_payload) = ctx.send_command(name, &BATTERY_UUID, EC_BAT_GET_BST, &[battery_id])
+    else {
         return;
     };
 
@@ -49,7 +48,8 @@ fn test_battery_get_bst(ctx: &mut E2eContext) {
     let voltage = resp_payload.u32_at(12);
 
     log::info!(
-        "  GetBst: state={:#x} rate={} capacity={} voltage={}",
+        "  GetBst[id={}]: state={:#x} rate={} capacity={} voltage={}",
+        battery_id,
         state,
         rate,
         capacity,
@@ -59,20 +59,20 @@ fn test_battery_get_bst(ctx: &mut E2eContext) {
     // Exact equality: the mock is discharging only (DISCHARGING set, CHARGING /
     // CRITICAL / CHARGE_LIMITING clear), so the ACPI state word is exactly 0x1.
     if state != EXPECT_STATE_DISCHARGING {
-        ctx.fail("battery_get_bst", "EC BST state != DISCHARGING-only (0x1)");
+        ctx.fail(name, "EC BST state != DISCHARGING-only (0x1)");
         return;
     }
     if rate != EXPECT_PRESENT_RATE {
-        ctx.fail("battery_get_bst", "present_rate != EC mock value");
+        ctx.fail(name, "present_rate != EC mock value");
         return;
     }
     if capacity != EXPECT_REMAINING_CAPACITY {
-        ctx.fail("battery_get_bst", "remaining_capacity != EC mock value");
+        ctx.fail(name, "remaining_capacity != EC mock value");
         return;
     }
-    if voltage != EXPECT_PRESENT_VOLTAGE {
-        ctx.fail("battery_get_bst", "present_voltage != EC mock value");
+    if voltage != expect_voltage {
+        ctx.fail(name, "present_voltage != EC mock value for battery id");
         return;
     }
-    ctx.pass("battery_get_bst");
+    ctx.pass(name);
 }
