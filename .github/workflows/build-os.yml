@@ -2,10 +2,10 @@
 #
 # SPDX-License-Identifier: MIT
 #
-# Downloads pre-built driver artifacts from the odp-windows-drivers repository,
-# builds a Validation OS WIM, injects the QEMU drivers, converts to VHDX, and
-# uploads the result.  The list of driver artifacts to download is maintained in
-# postbuild/os/prebuilt/driverlist.txt.
+# Downloads pre-built driver assets from the latest odp-windows-drivers release,
+# unzips them, builds a Validation OS WIM, injects the QEMU drivers, converts to
+# VHDX, and uploads the result.  The list of driver assets to download is
+# maintained in postbuild/os/prebuilt/driverlist.txt.
 #
 # Third-party actions are pinned by commit SHA.
 #
@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       drivers_repo:
-        description: 'GitHub repository to download driver artifacts from (owner/repo)'
+        description: 'GitHub repository to download driver assets from (owner/repo)'
         required: false
         default: 'OpenDevicePartnership/odp-windows-drivers'
         type: string
@@ -37,7 +37,7 @@ on:
         required: true
         type: string
       drivers_repo:
-        description: 'GitHub repository to download driver artifacts from (owner/repo)'
+        description: 'GitHub repository to download driver assets from (owner/repo)'
         required: false
         default: 'OpenDevicePartnership/odp-windows-drivers'
         type: string
@@ -60,36 +60,49 @@ jobs:
         with:
           ref: ${{ inputs.git_ref || github.ref }}
 
-      - name: Resolve driver artifacts
+      - name: Resolve driver assets
         run: |
-          $artifactNames = Get-Content -Path 'postbuild\os\prebuilt\driverlist.txt' |
+          $assetNames = Get-Content -Path 'postbuild\os\prebuilt\driverlist.txt' |
             ForEach-Object { $_.Trim() } |
             Where-Object { $_ -and -not $_.StartsWith('#') }
 
-          if (-not $artifactNames) {
-            throw 'No artifact names found in postbuild\os\prebuilt\driverlist.txt'
+          if (-not $assetNames) {
+            throw 'No driver names found in postbuild\os\prebuilt\driverlist.txt'
           }
 
-          $artifactNamesFile = Join-Path $env:RUNNER_TEMP 'artifact-names.txt'
-          $artifactNames -join "`n" | Out-File -FilePath $artifactNamesFile -Encoding utf8
-          "DRIVER_ARTIFACT_NAMES_FILE=$artifactNamesFile" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $assetNamesFile = Join-Path $env:RUNNER_TEMP 'asset-names.txt'
+          $assetNames -join "`n" | Out-File -FilePath $assetNamesFile -Encoding utf8
+          "DRIVER_ASSET_NAMES_FILE=$assetNamesFile" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Download driver artifacts
+      - name: Download driver assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if (-not (Test-Path $env:DRIVER_ARTIFACT_NAMES_FILE)) {
-            throw "Driver artifact list '$env:DRIVER_ARTIFACT_NAMES_FILE' does not exist"
+          if (-not (Test-Path $env:DRIVER_ASSET_NAMES_FILE)) {
+            throw "Driver asset list '$env:DRIVER_ASSET_NAMES_FILE' does not exist"
           }
 
-          $artifactNames = Get-Content -Path $env:DRIVER_ARTIFACT_NAMES_FILE
+          $assetNames = Get-Content -Path $env:DRIVER_ASSET_NAMES_FILE
+          $driversRepo = '${{ inputs.drivers_repo || 'OpenDevicePartnership/odp-windows-drivers' }}'
 
-          foreach ($name in $artifactNames) {
+          # Drivers are published as zip assets on the rolling 'latest' release
+          # (unlike workflow artifacts, gh does not auto-extract them), so each
+          # asset is downloaded and manually unzipped into drivers/<name>.
+          foreach ($name in $assetNames) {
             $destPath = Join-Path 'drivers' $name
             New-Item -ItemType Directory -Path $destPath -Force | Out-Null
-            Write-Host "Downloading artifact: $name -> $destPath"
-            gh run download --repo '${{ inputs.drivers_repo || 'OpenDevicePartnership/odp-windows-drivers' }}' --name $name --dir $destPath
-            if ($LASTEXITCODE -ne 0) { throw "Failed to download artifact $name" }
+
+            $assetName = "$name.zip"
+            $zipPath = Join-Path $env:RUNNER_TEMP $assetName
+            if (Test-Path $zipPath) { Remove-Item -Path $zipPath -Force }
+
+            Write-Host "Downloading asset: $assetName -> $destPath"
+            gh release download latest --repo $driversRepo --pattern $assetName --dir $env:RUNNER_TEMP --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Failed to download asset $assetName from the latest release of $driversRepo" }
+
+            if (-not (Test-Path $zipPath)) { throw "Downloaded asset '$zipPath' does not exist" }
+
+            Expand-Archive -Path $zipPath -DestinationPath $destPath -Force
           }
 
       - name: Download Validation OS ISO
@@ -165,8 +178,8 @@ jobs:
             throw 'WIM_PATH is not set'
           }
 
-          if (-not (Test-Path $env:DRIVER_ARTIFACT_NAMES_FILE)) {
-            throw "Driver artifact list '$env:DRIVER_ARTIFACT_NAMES_FILE' does not exist"
+          if (-not (Test-Path $env:DRIVER_ASSET_NAMES_FILE)) {
+            throw "Driver asset list '$env:DRIVER_ASSET_NAMES_FILE' does not exist"
           }
 
           $wimPath = Resolve-Path $env:WIM_PATH
@@ -178,12 +191,12 @@ jobs:
 
           New-Item -ItemType Directory -Path $mountPath -Force | Out-Null
 
-          $artifactNames = Get-Content -Path $env:DRIVER_ARTIFACT_NAMES_FILE
+          $assetNames = Get-Content -Path $env:DRIVER_ASSET_NAMES_FILE
 
-          $driverRoots = $artifactNames | ForEach-Object { Resolve-Path (Join-Path 'drivers' $_) }
+          $driverRoots = $assetNames | ForEach-Object { Resolve-Path (Join-Path 'drivers' $_) }
 
           if (-not $driverRoots) {
-            throw "No driver paths resolved from $env:DRIVER_ARTIFACT_NAMES_FILE"
+            throw "No driver paths resolved from $env:DRIVER_ASSET_NAMES_FILE"
           }
 
           $infPaths = foreach ($driverRoot in $driverRoots) {
@@ -191,7 +204,7 @@ jobs:
           }
 
           if (-not $infPaths) {
-            throw "No INF files found for any driver listed in $env:DRIVER_ARTIFACT_NAMES_FILE"
+            throw "No INF files found for any driver listed in $env:DRIVER_ASSET_NAMES_FILE"
           }
 
           $infPaths = $infPaths | Sort-Object FullName -Unique
