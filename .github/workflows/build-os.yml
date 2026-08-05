@@ -8,8 +8,7 @@
 # maintained in postbuild/os/prebuilt/driverlist.txt.
 #
 # It also downloads the EC test apps (ec-test-tui / ec-test-cli) from the latest
-# odp-platform-common release and extracts them onto the OS partition, preserving
-# the archive's own folder layout.
+# odp-platform-common release and extracts them to C:\ectest in the image.
 #
 # Third-party actions are pinned by commit SHA.
 #
@@ -135,8 +134,8 @@ jobs:
 
           if (-not (Test-Path $zipPath)) { throw "Downloaded asset '$zipPath' does not exist" }
 
-          # The extracted archive is applied verbatim onto the OS partition later,
-          # so its own folder layout determines where the apps land.
+          # The archive contains a top-level ectest\ folder, so extracting it onto
+          # the OS partition produces C:\ectest.
           "EC_TEST_APPS_ZIP=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Download Validation OS ISO
@@ -311,12 +310,15 @@ jobs:
             }
 
             Expand-Archive -Path $env:EC_TEST_APPS_ZIP -DestinationPath "${osLetter}:\" -Force
-            $extractedApps = Get-ChildItem -Path "${osLetter}:\" -Recurse -Filter *.exe -File |
-              Where-Object { $_.Name -like 'ec-test-*' }
-            if (-not $extractedApps) {
-              throw "No EC test apps were extracted onto ${osLetter}:\"
+            $ecTestDir = "${osLetter}:\ectest"
+            $expectedApps = 'ec-test-tui.exe', 'ec-test-cli.exe'
+            foreach ($app in $expectedApps) {
+              $appPath = Join-Path $ecTestDir $app
+              if (-not (Test-Path $appPath)) {
+                throw "Expected EC test app missing: $appPath"
+              }
             }
-            Write-Host "Extracted EC test apps: $($extractedApps.Name -join ', ')"
+            Write-Host "Extracted EC test apps to ${ecTestDir}"
 
             Write-Host "Creating boot files on ${efiLetter}:\"
             bcdboot "${osLetter}:\Windows" /s "${efiLetter}:" /f UEFI
