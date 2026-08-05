@@ -7,6 +7,10 @@
 # VHDX, and uploads the result.  The list of driver assets to download is
 # maintained in postbuild/os/prebuilt/driverlist.txt.
 #
+# It also downloads the EC test apps (ec-test-tui / ec-test-cli) from the latest
+# odp-platform-common release and extracts them onto the OS partition, preserving
+# the archive's own folder layout.
+#
 # Third-party actions are pinned by commit SHA.
 #
 
@@ -30,6 +34,11 @@ on:
         required: false
         default: 'OpenDevicePartnership/odp-windows-drivers'
         type: string
+      apps_repo:
+        description: 'GitHub repository to download EC test app assets from (owner/repo)'
+        required: false
+        default: 'OpenDevicePartnership/odp-platform-common'
+        type: string
   workflow_call:
     inputs:
       git_ref:
@@ -40,6 +49,11 @@ on:
         description: 'GitHub repository to download driver assets from (owner/repo)'
         required: false
         default: 'OpenDevicePartnership/odp-windows-drivers'
+        type: string
+      apps_repo:
+        description: 'GitHub repository to download EC test app assets from (owner/repo)'
+        required: false
+        default: 'OpenDevicePartnership/odp-platform-common'
         type: string
 
 concurrency:
@@ -104,6 +118,26 @@ jobs:
 
             Expand-Archive -Path $zipPath -DestinationPath $destPath -Force
           }
+
+      - name: Download EC test apps
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $appsRepo = '${{ inputs.apps_repo || 'OpenDevicePartnership/odp-platform-common' }}'
+          $assetName = 'ec-test-apps-ARM64.zip'
+
+          $zipPath = Join-Path $env:RUNNER_TEMP $assetName
+          if (Test-Path $zipPath) { Remove-Item -Path $zipPath -Force }
+
+          Write-Host "Downloading asset: $assetName from $appsRepo"
+          gh release download latest --repo $appsRepo --pattern $assetName --dir $env:RUNNER_TEMP --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Failed to download asset $assetName from the latest release of $appsRepo" }
+
+          if (-not (Test-Path $zipPath)) { throw "Downloaded asset '$zipPath' does not exist" }
+
+          # The extracted archive is applied verbatim onto the OS partition later,
+          # so its own folder layout determines where the apps land.
+          "EC_TEST_APPS_ZIP=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Download Validation OS ISO
         run: |
@@ -271,6 +305,18 @@ jobs:
             New-Item -Path $acpiTargetDir -ItemType Directory -Force | Out-Null
             Copy-Item -Path $env:ACPITABL_DAT_PATH -Destination (Join-Path $acpiTargetDir 'ACPITABL.dat') -Force
             Write-Host "Copied ACPITABL.dat to ${acpiTargetDir}"
+
+            if (-not $env:EC_TEST_APPS_ZIP) {
+              throw 'EC_TEST_APPS_ZIP is not set'
+            }
+
+            Expand-Archive -Path $env:EC_TEST_APPS_ZIP -DestinationPath "${osLetter}:\" -Force
+            $extractedApps = Get-ChildItem -Path "${osLetter}:\" -Recurse -Filter *.exe -File |
+              Where-Object { $_.Name -like 'ec-test-*' }
+            if (-not $extractedApps) {
+              throw "No EC test apps were extracted onto ${osLetter}:\"
+            }
+            Write-Host "Extracted EC test apps: $($extractedApps.Name -join ', ')"
 
             Write-Host "Creating boot files on ${efiLetter}:\"
             bcdboot "${osLetter}:\Windows" /s "${efiLetter}:" /f UEFI
