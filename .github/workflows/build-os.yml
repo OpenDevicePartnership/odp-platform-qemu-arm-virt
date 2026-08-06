@@ -134,8 +134,8 @@ jobs:
 
           if (-not (Test-Path $zipPath)) { throw "Downloaded asset '$zipPath' does not exist" }
 
-          # The archive contains a top-level ectest\ folder, so extracting it onto
-          # the OS partition produces C:\ectest.
+          # The archive contains a top-level ectest\ folder; it is extracted into
+          # the mounted WIM later so it lands at C:\ectest in the running OS.
           "EC_TEST_APPS_ZIP=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Download Validation OS ISO
@@ -205,7 +205,7 @@ jobs:
             throw "ACPITABL.dat does not exist at $env:ACPITABL_DAT_PATH"
           }
 
-      - name: Inject QEMU drivers into WIM
+      - name: Inject QEMU drivers and EC test apps into WIM
         run: |
           if (-not $env:WIM_PATH) {
             throw 'WIM_PATH is not set'
@@ -213,6 +213,10 @@ jobs:
 
           if (-not (Test-Path $env:DRIVER_ASSET_NAMES_FILE)) {
             throw "Driver asset list '$env:DRIVER_ASSET_NAMES_FILE' does not exist"
+          }
+
+          if (-not $env:EC_TEST_APPS_ZIP) {
+            throw 'EC_TEST_APPS_ZIP is not set'
           }
 
           $wimPath = Resolve-Path $env:WIM_PATH
@@ -251,6 +255,22 @@ jobs:
               dism.exe /Image:$mountPath /Add-Driver /Driver:$($infPath.FullName)
               if ($LASTEXITCODE -ne 0) { throw "Failed to add driver $($infPath.FullName) with exit code $LASTEXITCODE" }
             }
+
+            # ectest must go inside the WIM (not onto the applied partition):
+            # Validation OS RAM-boots the WIM, so partition-only files are not
+            # visible at runtime. Drivers already work for this reason.
+            # The archive contains a top-level ectest\ folder, so extracting it
+            # at the WIM root produces \ectest (C:\ectest once booted).
+            Expand-Archive -Path $env:EC_TEST_APPS_ZIP -DestinationPath $mountPath -Force
+            $ecTestDir = Join-Path $mountPath 'ectest'
+            $expectedApps = 'ec-test-tui.exe', 'ec-test-cli.exe'
+            foreach ($app in $expectedApps) {
+              $appPath = Join-Path $ecTestDir $app
+              if (-not (Test-Path $appPath)) {
+                throw "Expected EC test app missing: $appPath"
+              }
+            }
+            Write-Host "Extracted EC test apps into WIM at $ecTestDir"
 
             dism.exe /Unmount-Image /MountDir:$mountPath /Commit
             if ($LASTEXITCODE -ne 0) { throw "Failed to commit WIM changes with exit code $LASTEXITCODE" }
@@ -304,21 +324,6 @@ jobs:
             New-Item -Path $acpiTargetDir -ItemType Directory -Force | Out-Null
             Copy-Item -Path $env:ACPITABL_DAT_PATH -Destination (Join-Path $acpiTargetDir 'ACPITABL.dat') -Force
             Write-Host "Copied ACPITABL.dat to ${acpiTargetDir}"
-
-            if (-not $env:EC_TEST_APPS_ZIP) {
-              throw 'EC_TEST_APPS_ZIP is not set'
-            }
-
-            Expand-Archive -Path $env:EC_TEST_APPS_ZIP -DestinationPath "${osLetter}:\" -Force
-            $ecTestDir = "${osLetter}:\ectest"
-            $expectedApps = 'ec-test-tui.exe', 'ec-test-cli.exe'
-            foreach ($app in $expectedApps) {
-              $appPath = Join-Path $ecTestDir $app
-              if (-not (Test-Path $appPath)) {
-                throw "Expected EC test app missing: $appPath"
-              }
-            }
-            Write-Host "Extracted EC test apps to ${ecTestDir}"
 
             Write-Host "Creating boot files on ${efiLetter}:\"
             bcdboot "${osLetter}:\Windows" /s "${efiLetter}:" /f UEFI
