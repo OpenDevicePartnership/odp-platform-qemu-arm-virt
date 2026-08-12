@@ -6,6 +6,13 @@
 
 This repo contains all the necessary content for working on QEMU `virt` (arm64) platform
 
+## Documentation
+
+Project documentation is maintained in the [`docs/`](docs/src/introduction.md)
+mdBook and published to
+[GitHub Pages](https://opendevicepartnership.github.io/odp-platform-qemu-arm-virt/).
+Build it locally with `make docs`.
+
 ## Quick Start Guide
 
 This configuration has been tested on a windows running WSL Ubuntu 24.04 with Visual Studio Code.

@@ -13,6 +13,7 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 ARG NASM_VERSION=2.16.01
 ARG CSPELL_VERSION=5.20.0
 ARG MARKDOWNLINT_VERSION=0.32.2
+ARG MDBOOK_VERSION=0.4.52
 
 # Visit this NuGet package version page to see the latest version available
 # https://dev.azure.com/projectmu/acpica/_artifacts/feed/mu_iasl/NuGet/edk2-acpica-iasl/versions
@@ -117,7 +118,8 @@ RUN RUST_VERSION=1.92.0 && \
     cargo binstall -y cargo-make@0.37.24 && \
     cargo binstall -y cargo-tarpaulin@0.31.5 && \
     cargo binstall -y sccache@0.10.0 && \
-    cargo binstall -y defmt-print@1.0.0
+    cargo binstall -y defmt-print@1.0.0 && \
+    cargo binstall -y mdbook@${MDBOOK_VERSION}
 USER root
 
 #

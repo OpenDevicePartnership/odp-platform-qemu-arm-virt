@@ -1,0 +1,15 @@
+[book]
+authors = ["ODP QEMU ARM Virt Contributors"]
+language = "en"
+src = "src"
+title = "ODP QEMU ARM Virt Platform"
+
+[build]
+build-dir = "book"
+
+[output.html]
+git-repository-icon = "fa-github"
+git-repository-url = "https://github.com/OpenDevicePartnership/odp-platform-qemu-arm-virt"
+
+[output.html.fold]
+enable = true

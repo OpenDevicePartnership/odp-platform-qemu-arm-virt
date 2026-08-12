@@ -54,6 +54,12 @@ run_ec:
 	$(MAKE) -C mod run_ec
 
 # ------------------------------------------------------------
+# Build project documentation
+# ------------------------------------------------------------
+docs:
+	mdbook build docs
+
+# ------------------------------------------------------------
 # Run E2E tests against the secure partition
 # ------------------------------------------------------------
 # Two phases:
@@ -79,4 +85,5 @@ clean:
 	$(MAKE) -C mod clean
 	$(MAKE) -C e2e-tests clean
 	$(MAKE) -C postbuild/os clean
-.PHONY: all mod secure-services secure-services-test uefi ec run run_ec e2e-test run_os clean
+	rm -rf docs/book
+.PHONY: all mod secure-services secure-services-test uefi ec run run_ec docs e2e-test run_os clean
