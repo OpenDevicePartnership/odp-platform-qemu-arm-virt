@@ -5,7 +5,7 @@ For general instructions see postbuild/os/README.md
 ## Enabling Windbg
 If Windows doesn't boot properly on QEMU you are basically stuck wondering what is happening with no output after bootmgr starts there will be no further update in the serial port. To debug windows we need to connect windbg to the QEMU to see what is happening as drivers boot.
 
-As long as you pull the debug artifact for the windows image it has Windbg enabled by default. If you don't attach the debugger it will continue to boot after 30 seconds.
+As long as you pull the published windows image it has Windbg enabled by default. If you don't attach the debugger it will continue to boot after 30 seconds.
 
 ```
     Write-Host "Enabling debug"

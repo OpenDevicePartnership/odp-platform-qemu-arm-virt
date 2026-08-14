@@ -8,6 +8,6 @@ This section covers how to setup QEMU and boot windows image. We use QEMU as a r
 
 ## Running QEMU with Windows
 
-The windows image generation is done by .github\workflows\build-os.yml. This downloads the latest version of Validation OS and injects drivers and ACPI content into the windows image and then publishes an artifact that can be pulled and loaded directly my the make scripts in the container. Running "make run_os" will pull the latest pre-generated image.
+The windows image generation is done by .github\workflows\build-os.yml. This downloads the latest version of Validation OS and injects drivers and ACPI content into the windows image. On pushes to `main` the image is zipped and published as the `os-image.zip` asset on the rolling `latest` prerelease; pull requests only build it for validation. Running "make run_os" will pull and unzip that asset.
 
 If you want to create your own windows image you can modify the one downloaded at postbuild/os/prebuilt/ValidationOS.vhdx and place your updated image there.
