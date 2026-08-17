@@ -36,18 +36,7 @@ $(OS_IMAGE_INPUT):
 	mkdir -p prebuilt; \
 	rm -f prebuilt/$(OS_IMAGE_ASSET) prebuilt/$(OS_IMAGE_ASSET_FILE) "$(OS_IMAGE_INPUT)"; \
 	echo "Downloading $$url"; \
-	if ! curl -fsSL --retry 3 -o prebuilt/$(OS_IMAGE_ASSET) "$$url"; then \
-		echo "Anonymous download failed; retrying with the GitHub CLI."; \
-		if ! command -v gh >/dev/null 2>&1; then \
-			echo "GitHub CLI (gh) is required to fetch $(OS_IMAGE_ASSET) from a non-public repo."; \
-			exit 1; \
-		fi; \
-		if ! gh auth status >/dev/null 2>&1; then \
-			echo "GitHub CLI is not authenticated. Run 'gh auth login' and retry."; \
-			exit 1; \
-		fi; \
-		GH_FORCE_TTY=0 gh release download $(OS_IMAGE_RELEASE) --repo "$(OS_IMAGE_REPO)" --pattern "$(OS_IMAGE_ASSET)" --dir prebuilt --clobber; \
-	fi; \
+	curl -fsSL --retry 3 -o prebuilt/$(OS_IMAGE_ASSET) "$$url"; \
 	unzip -oq prebuilt/$(OS_IMAGE_ASSET) -d prebuilt; \
 	rm -f prebuilt/$(OS_IMAGE_ASSET); \
 	if [ ! -f prebuilt/$(OS_IMAGE_ASSET_FILE) ]; then \

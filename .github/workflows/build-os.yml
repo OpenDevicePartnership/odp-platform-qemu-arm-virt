@@ -10,10 +10,10 @@
 # It also downloads the EC test apps (ec-test-tui / ec-test-cli) from the latest
 # odp-platform-common release and extracts them to C:\ectest in the image.
 #
-# Pull requests build the image for validation only.  On pushes to main the image
-# is zipped and published as an asset on the rolling 'latest' prerelease (created
-# once, by hand), which is what `make run_os` pulls.  Nothing is published from a
-# pull request, so a broken or stale branch can never become the shared image.
+# Pull requests build the image for validation only.  Every other trigger (push to
+# main, manual dispatch, workflow_call) zips the image and publishes it as an asset
+# on the rolling 'latest' prerelease (created once, by hand), which is what
+# `make run_os` pulls.
 #
 # Third-party actions are pinned by commit SHA.
 #
@@ -62,8 +62,10 @@ on:
         type: string
 
 concurrency:
-  group: build_os_image-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
+  group: build_os_image-${{ github.head_ref || github.ref }}
+  # Superseded PR builds are disposable; a publishing run cancelled mid-upload
+  # would leave the 'latest' asset deleted and not replaced.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -351,7 +353,8 @@ jobs:
           Write-Host "VHDX created: $vhdxPath ($('{0:N1} MB' -f ((Get-Item $vhdxPath).Length / 1MB)))"
 
       - name: Package and publish image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # Pushes only ever fire on main; PRs are the only trigger that must not publish.
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
