@@ -141,7 +141,7 @@ jobs:
       - name: Download Validation OS ISO
         run: |
           $ProgressPreference = 'SilentlyContinue'
-          Invoke-WebRequest 'https://aka.ms/DownloadValidationOS_arm64' -OutFile 'ValidationOS.iso'
+          Invoke-WebRequest 'https://aka.ms/DownloadValidationOS_26H1_arm64' -OutFile 'ValidationOS.iso'
 
       - name: Build WIM
         run: |
