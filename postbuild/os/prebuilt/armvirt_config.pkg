@@ -3,8 +3,24 @@
 # SPDX-License-Identifier: MIT
 #
 
-+include apps.pkg
-+include graphics.pkg
-+include InboxDrivers.pkg
-+include usb.pkg
+# Validation OS 26H1 categorizes CABs by feature tier. Keep the package
+# subpaths explicit because this config is outside the ISO's Configs tree.
+Microsoft-OneCore-StorNvme-Package [Common]
+Microsoft-Windows-CoreSystem-NetworkDrivers-Package [Common]
+Microsoft-Windows-NetFx-VCRedist-Package [Common]
+Microsoft-Windows-OpenGL-Package [Common]
+Microsoft-WinVOS-Apps-Package [Common]
+Microsoft-WinVOS-COM-Package [Common]
+Microsoft-WinVOS-Connectivity-Devices-Package [Common]
+Microsoft-WinVOS-Connectivity-Package [Common]
 Microsoft-WinVOS-DeveloperTools-Package [Extra]
+Microsoft-WinVOS-Driver-Support-Package [Common]
+Microsoft-WinVOS-Fonts-Package [Common]
+Microsoft-WinVOS-GDIPlus-Package [Common]
+Microsoft-WinVOS-GPIO-Package [Common]
+Microsoft-WinVOS-Graphics-Package [Common]
+Microsoft-WinVOS-Graphics-UXTheme-Package [Common]
+Microsoft-WinVOS-Inbox-Drivers-Package [Common]
+Microsoft-WinVOS-NetFx45-Package [Common]
+Microsoft-WinVOS-PnP-Package [Common]
+Microsoft-WinVOS-TerminalServices-Package [Common]
