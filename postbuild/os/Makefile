@@ -11,8 +11,9 @@ include ../../Common.mk
 WORKSPACE ?= $(CURDIR)
 OS_IMAGE_OUTPUT := build/winvos.qcow2
 OS_IMAGE_INPUT := prebuilt/ValidationOS.vhdx
-OS_IMAGE_ARTIFACT ?= os-image
-OS_IMAGE_ARTIFACT_FILE ?= os-image.vhdx
+OS_IMAGE_RELEASE ?= latest
+OS_IMAGE_ASSET ?= os-image.zip
+OS_IMAGE_ASSET_FILE ?= os-image.vhdx
 OS_IMAGE_REPO ?= OpenDevicePartnership/odp-platform-qemu-arm-virt
 
 BIOS_FLASH0 := ../../$(BIOS_FV_DIR)/SECURE_FLASH0.fd
@@ -27,27 +28,22 @@ $(BIOS_OUTPUTS):
 	@exit 1
 
 # ------------------------------------------------------------
-# Download the input image from GitHub Actions if needed
+# Download the input image from the latest GitHub release if needed
 # ------------------------------------------------------------
 $(OS_IMAGE_INPUT):
 	@set -eu; \
-	if ! command -v gh >/dev/null 2>&1; then \
-		echo "GitHub CLI (gh) is required to fetch $(OS_IMAGE_INPUT)."; \
-		exit 1; \
-	fi; \
-	if ! gh auth status >/dev/null 2>&1; then \
-		echo "GitHub CLI is not authenticated. Run 'gh auth login' and retry."; \
-		exit 1; \
-	fi; \
-	repo="$(OS_IMAGE_REPO)"; \
+	url="https://github.com/$(OS_IMAGE_REPO)/releases/download/$(OS_IMAGE_RELEASE)/$(OS_IMAGE_ASSET)"; \
 	mkdir -p prebuilt; \
-	rm -f prebuilt/$(OS_IMAGE_ARTIFACT_FILE) "$(OS_IMAGE_INPUT)"; \
-	GH_FORCE_TTY=0 gh run download --repo "$$repo" --name "$(OS_IMAGE_ARTIFACT)" --dir prebuilt; \
-	if [ ! -f prebuilt/$(OS_IMAGE_ARTIFACT_FILE) ]; then \
-		echo "Artifact file not found prebuilt/$(OS_IMAGE_ARTIFACT_FILE) please manually run the workflow."; \
+	rm -f prebuilt/$(OS_IMAGE_ASSET) prebuilt/$(OS_IMAGE_ASSET_FILE) "$(OS_IMAGE_INPUT)"; \
+	echo "Downloading $$url"; \
+	curl -fsSL --retry 3 -o prebuilt/$(OS_IMAGE_ASSET) "$$url"; \
+	unzip -oq prebuilt/$(OS_IMAGE_ASSET) -d prebuilt; \
+	rm -f prebuilt/$(OS_IMAGE_ASSET); \
+	if [ ! -f prebuilt/$(OS_IMAGE_ASSET_FILE) ]; then \
+		echo "$(OS_IMAGE_ASSET) did not contain $(OS_IMAGE_ASSET_FILE)."; \
 		exit 1; \
 	fi; \
-	mv prebuilt/$(OS_IMAGE_ARTIFACT_FILE) "$(OS_IMAGE_INPUT)"; \
+	mv prebuilt/$(OS_IMAGE_ASSET_FILE) "$(OS_IMAGE_INPUT)"; \
 	echo "Downloaded $(OS_IMAGE_INPUT)."
 
 # ------------------------------------------------------------

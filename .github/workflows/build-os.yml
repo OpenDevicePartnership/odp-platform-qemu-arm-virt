@@ -3,12 +3,17 @@
 # SPDX-License-Identifier: MIT
 #
 # Downloads pre-built driver assets from the latest odp-windows-drivers release,
-# unzips them, builds a Validation OS WIM, injects the QEMU drivers, converts to
-# VHDX, and uploads the result.  The list of driver assets to download is
-# maintained in postbuild/os/prebuilt/driverlist.txt.
+# unzips them, builds a Validation OS WIM, injects the QEMU drivers, and converts
+# the result to VHDX.  The list of driver assets to download is maintained in
+# postbuild/os/prebuilt/driverlist.txt.
 #
 # It also downloads the EC test apps (ec-test-tui / ec-test-cli) from the latest
 # odp-platform-common release and extracts them to C:\ectest in the image.
+#
+# Pull requests build the image for validation only.  Every other trigger (push to
+# main, manual dispatch, workflow_call) zips the image and publishes it as an asset
+# on the rolling 'latest' prerelease (created once, by hand), which is what
+# `make run_os` pulls.
 #
 # Third-party actions are pinned by commit SHA.
 #
@@ -20,12 +25,13 @@ permissions:
   actions: read
 
 on:
-  pull_request:
+  pull_request: &os-image-filters
     branches: [main]
     paths:
       - 'postbuild/os/**'
       - 'mod/uefi/platform/QemuArmVirtPkg/AcpiTables/**'
       - '.github/workflows/build-os.yml'
+  push: *os-image-filters
   workflow_dispatch:
     inputs:
       drivers_repo:
@@ -56,14 +62,18 @@ on:
         type: string
 
 concurrency:
-  group: build_os_image-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
+  group: build_os_image-${{ github.head_ref || github.ref }}
+  # Superseded PR builds are disposable; a publishing run cancelled mid-upload
+  # would leave the 'latest' asset deleted and not replaced.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
     runs-on: windows-latest
     name: Build QEMU ARM64 OS image
-    timeout-minutes: 20
+    timeout-minutes: 30
+    permissions:
+      contents: write
     defaults:
       run:
         shell: pwsh
@@ -342,10 +352,22 @@ jobs:
 
           Write-Host "VHDX created: $vhdxPath ($('{0:N1} MB' -f ((Get-Item $vhdxPath).Length / 1MB)))"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: os-image
-          path: staging/os-image.vhdx
-          retention-days: 14
-          if-no-files-found: error
+      - name: Package and publish image
+        # Pushes only ever fire on main; PRs are the only trigger that must not publish.
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $vhdxPath = 'staging\os-image.vhdx'
+          $zipPath = Join-Path $env:RUNNER_TEMP 'os-image.zip'
+          if (Test-Path $zipPath) { Remove-Item -Path $zipPath -Force }
+
+          # Relies on the job's pwsh shell: Windows PowerShell 5.1 cannot write the
+          # ZIP64 entries a VHDX this size needs.
+          Compress-Archive -Path $vhdxPath -DestinationPath $zipPath
+          Write-Host "Packaged: $zipPath ($('{0:N1} MB' -f ((Get-Item $zipPath).Length / 1MB)))"
+
+          # Uploading only the asset leaves the hand-created 'latest' prerelease and
+          # its tag untouched; --clobber replaces the asset from the previous run.
+          gh release upload latest $zipPath --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to upload os-image.zip to the latest release.' }
