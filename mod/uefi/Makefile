@@ -6,10 +6,6 @@
 
 include ../../Common.mk
 
-# TPM is enabled for the QEMU ARM VIRT build by default. Callers can
-# override TPM_DEV at invocation time, e.g. `make run TPM_DEV=/tmp/swtpm.sock`.
-TPM_DEV ?= /tmp/mytpm1/swtpm-sock
-
 # Unix sockets used to connect QEMU's virtual I2C controller and PL061 GPIO
 # to an external embedded controller (EC) QEMU instance. The EC side creates
 # the socket servers; this QEMU connects to them as a client (server=off).
@@ -21,6 +17,9 @@ EC_GPIO_SOCK ?= /tmp/qemu-ec-gpio.sock
 # (port 5900, forwarded by the devcontainer); `gtk` renders in a native window
 # (e.g. `make run_os QEMU_DISPLAY=gtk`); `none` disables display.
 QEMU_DISPLAY ?= vnc
+ODP_E2E_QEMU_PID_FILE ?=
+ODP_E2E_EC_PTY ?=
+ODP_E2E_SERIAL0_LOG ?=
 
 # QEMU wrapper that injects the EC co-simulation chardev sockets without
 # patching the patina-qemu submodule's QemuRunner plugin. Passed to stuart as
@@ -61,10 +60,12 @@ builder-shell: builder-image
 	@$(DC_RUN) --shell
 
 run: builder-image
-	@mkdir -p "$(dir $(TPM_DEV))"
-	@REAL_QEMU=$(QEMU_PATH) EC_I2C_SOCK=$(EC_I2C_SOCK) EC_GPIO_SOCK=$(EC_GPIO_SOCK) QEMU_DISPLAY=$(QEMU_DISPLAY) \
-		$(DC_RUN) -w mod/uefi/patina-qemu -- \
-		stuart_build -c Platforms/QemuArmVirtPkg/PlatformBuild.py --flashonly GDB_SERVER=5555 SERIAL_PORT=56789 TPM_DEV=$(TPM_DEV) PATH_TO_OS=$(PATH_TO_OS) QEMU_PATH=$(QEMU_EC_WRAPPER_DC)
+	@$(DC_RUN) -w mod/uefi/patina-qemu -- \
+		env REAL_QEMU=$(QEMU_PATH) EC_I2C_SOCK=$(EC_I2C_SOCK) EC_GPIO_SOCK=$(EC_GPIO_SOCK) QEMU_DISPLAY=$(QEMU_DISPLAY) \
+		$(if $(ODP_E2E_QEMU_PID_FILE),ODP_E2E_QEMU_PID_FILE=$(ODP_E2E_QEMU_PID_FILE),) \
+		$(if $(ODP_E2E_EC_PTY),ODP_E2E_EC_PTY=$(ODP_E2E_EC_PTY),) \
+		$(if $(ODP_E2E_SERIAL0_LOG),ODP_E2E_SERIAL0_LOG=$(ODP_E2E_SERIAL0_LOG),) \
+		stuart_build -c Platforms/QemuArmVirtPkg/PlatformBuild.py --flashonly GDB_SERVER=5555 SERIAL_PORT=56789 PATH_TO_OS=$(PATH_TO_OS) QEMU_PATH=$(QEMU_EC_WRAPPER_DC)
 
 clean:
 	@echo "=== Cleaning UEFI build artifacts ==="
