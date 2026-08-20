@@ -7,13 +7,11 @@
 # the result to VHDX.  The list of driver assets to download is maintained in
 # postbuild/os/prebuilt/driverlist.txt.
 #
-# It also downloads the EC test apps (ec-test-tui / ec-test-cli) from the latest
-# odp-platform-common release and extracts them to C:\ectest in the image.
+# It also downloads the EC test apps from the latest odp-platform-common release,
+# extracts them to C:\ectest, and matches the payload's `acpi` source contract.
 #
-# Pull requests build the image for validation only.  Every other trigger (push to
-# main, manual dispatch, workflow_call) zips the image and publishes it as an asset
-# on the rolling 'latest' prerelease (created once, by hand), which is what
-# `make run_os` pulls.
+# Pull requests build the image for validation only. Every other trigger publishes
+# the stable base used by `make run_os` and `make windows-acpi-e2e`.
 #
 # Third-party actions are pinned by commit SHA.
 #
@@ -25,13 +23,24 @@ permissions:
   actions: read
 
 on:
-  pull_request: &os-image-filters
+  pull_request:
+    branches: [main]
+    paths:
+      - '.devcontainer/Dockerfile'
+      - '.github/workflows/build-os.yml'
+      - 'Makefile'
+      - 'mod/Makefile'
+      - 'mod/uefi/Makefile'
+      - 'mod/uefi/platform/QemuArmVirtPkg/AcpiTables/**'
+      - 'postbuild/os/**'
+      - 'scripts/lib/ec-qemu.sh'
+      - 'scripts/qemu-ec-wrapper.sh'
+      - 'scripts/run-windows-acpi-e2e.sh'
+  push:
     branches: [main]
     paths:
       - 'postbuild/os/**'
-      - 'mod/uefi/platform/QemuArmVirtPkg/AcpiTables/**'
       - '.github/workflows/build-os.yml'
-  push: *os-image-filters
   workflow_dispatch:
     inputs:
       drivers_repo:
@@ -92,6 +101,9 @@ jobs:
           if (-not $assetNames) {
             throw 'No driver names found in postbuild\os\prebuilt\driverlist.txt'
           }
+          if ($assetNames -notcontains 'driver-ectest_kmdf-ARM64-Release') {
+            throw 'Stable base requires driver-ectest_kmdf-ARM64-Release'
+          }
 
           $assetNamesFile = Join-Path $env:RUNNER_TEMP 'asset-names.txt'
           $assetNames -join "`n" | Out-File -FilePath $assetNamesFile -Encoding utf8
@@ -150,70 +162,55 @@ jobs:
 
       - name: Download Validation OS ISO
         run: |
-          $ProgressPreference = 'SilentlyContinue'
-          Invoke-WebRequest 'https://aka.ms/DownloadValidationOS_arm64' -OutFile 'ValidationOS.iso'
+          curl.exe --fail --location --retry 5 --retry-all-errors `
+            --continue-at - --output ValidationOS.iso `
+            https://aka.ms/DownloadValidationOS_26H1_arm64
+          if ($LASTEXITCODE -ne 0) {
+            throw "ValidationOS ISO download failed with exit code $LASTEXITCODE"
+          }
 
       - name: Build WIM
         run: |
           $mount = Mount-DiskImage -ImagePath (Resolve-Path ValidationOS.iso).Path -PassThru
           $drive = ($mount | Get-Volume).DriveLetter
+          $layout = Join-Path $env:RUNNER_TEMP 'winvos-package-layout'
           try {
-            cmd /c "${drive}:\GenImage\GenImage.cmd -PackagesList:postbuild\os\prebuilt\armvirt_config.pkg -PackagePath:${drive}:\cabs -ImagePath:${drive}:\ -RegistryImport:postbuild\os\prebuilt\armvirt_policy.reg -OutPath:postbuild\os\build -wim -NoWait"
+            if (Test-Path $layout) { Remove-Item -Path $layout -Recurse -Force }
+            New-Item -ItemType Directory -Path (Join-Path $layout 'cabs') -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $layout 'cabs\Extra') -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $layout 'GenImage') -Force | Out-Null
+            New-Item -ItemType Junction -Path (Join-Path $layout 'cabs\neutral') `
+              -Target "${drive}:\cabs\Common\neutral" | Out-Null
+            New-Item -ItemType Junction -Path (Join-Path $layout 'cabs\en-us') `
+              -Target "${drive}:\cabs\Common\en-us" | Out-Null
+            New-Item -ItemType Junction -Path (Join-Path $layout 'cabs\Extra\neutral') `
+              -Target "${drive}:\cabs\Extra\neutral" | Out-Null
+            New-Item -ItemType Junction -Path (Join-Path $layout 'cabs\Extra\en-us') `
+              -Target "${drive}:\cabs\Extra\en-us" | Out-Null
+            New-Item -ItemType Junction -Path (Join-Path $layout 'GenImage\Configs') `
+              -Target "${drive}:\GenImage\Configs" | Out-Null
+
+            $packagePath = Join-Path $layout 'cabs'
+            cmd /c "${drive}:\GenImage\GenImage.cmd -PackagesList:postbuild\os\prebuilt\armvirt_config.pkg -PackagePath:$packagePath -ImagePath:${drive}:\ -RegistryImport:postbuild\os\prebuilt\armvirt_policy.reg -OutPath:postbuild\os\build -wim -NoWait"
             if ($LASTEXITCODE -ne 0) { throw "GenImage.cmd failed with exit code $LASTEXITCODE" }
 
             $wim = Get-ChildItem -Path 'postbuild\os\build' -Filter *.wim -File | Select-Object -First 1
             if (-not $wim) { throw 'GenImage produced no .wim in postbuild\os\build' }
             "WIM_PATH=$($wim.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           } finally {
+            if (Test-Path $layout) { Remove-Item -Path $layout -Recurse -Force }
             Dismount-DiskImage -ImagePath $mount.ImagePath
           }
 
-      - name: Build ACPITABL.dat
+      - name: Validate ValidationOS build floor
         run: |
-          # iasl ships as an edk2 NuGet external-dependency that is not present in a
-          # fresh checkout (the patina-qemu submodule does not commit extdep binaries).
-          # Use the bundled copy if it exists, otherwise download the same pinned
-          # version of the ACPICA iasl compiler from the public projectmu NuGet feed.
-          $iaslDir = 'mod\uefi\patina-qemu\MU_BASECORE\BaseTools\Bin\edk2-acpica-iasl_extdep\Windows-x86'
-          if (Test-Path (Join-Path $iaslDir 'iasl.exe')) {
-            $iaslDir = (Resolve-Path $iaslDir).Path
-          } else {
-            $iaslVersion = '20230628.0.1'
-            $iaslUrl = "https://pkgs.dev.azure.com/projectmu/acpica/_packaging/mu_iasl/nuget/v3/flat2/edk2-acpica-iasl/$iaslVersion/edk2-acpica-iasl.$iaslVersion.nupkg"
-            $iaslRoot = Join-Path $env:RUNNER_TEMP 'iasl'
-            $iaslZip = Join-Path $env:RUNNER_TEMP 'edk2-acpica-iasl.zip'
-            Write-Host "Bundled iasl not found; downloading $iaslUrl"
-            $ProgressPreference = 'SilentlyContinue'
-            Invoke-WebRequest -Uri $iaslUrl -OutFile $iaslZip
-            if (Test-Path $iaslRoot) { Remove-Item -Path $iaslRoot -Recurse -Force }
-            Expand-Archive -Path $iaslZip -DestinationPath $iaslRoot -Force
-            $iaslDir = Join-Path $iaslRoot 'edk2-acpica-iasl\Windows-x86'
-            if (-not (Test-Path (Join-Path $iaslDir 'iasl.exe'))) {
-              throw "iasl.exe not found after extracting $iaslUrl"
-            }
-            $iaslDir = (Resolve-Path $iaslDir).Path
+          $minimumBuild = 28000
+          $image = Get-WindowsImage -ImagePath $env:WIM_PATH -Index 1
+          $version = [version]$image.Version
+          if ($version.Build -lt $minimumBuild) {
+            throw "ValidationOS build $($version.Build) is below required build $minimumBuild"
           }
-          "PATH=$iaslDir;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          $env:PATH = "$iaslDir;$env:PATH"
-
-          iasl -v
-          if ($LASTEXITCODE -ne 0) { throw "iasl verification failed with exit code $LASTEXITCODE" }
-
-          $scriptPath = 'mod\uefi\platform\QemuArmVirtPkg\AcpiTables\build_acpi_tables.ps1'
-          if (-not (Test-Path $scriptPath)) {
-            throw "Missing ACPI build script: $scriptPath"
-          }
-
-          & $scriptPath
-          if ($LASTEXITCODE -ne 0) { throw "ACPI build script failed with exit code $LASTEXITCODE" }
-
-          if (-not $env:ACPITABL_DAT_PATH) {
-            throw 'ACPITABL_DAT_PATH was not exported by build_acpi_tables.ps1'
-          }
-
-          if (-not (Test-Path $env:ACPITABL_DAT_PATH)) {
-            throw "ACPITABL.dat does not exist at $env:ACPITABL_DAT_PATH"
-          }
+          Write-Host "ValidationOS build $($version.Build) satisfies floor $minimumBuild"
 
       - name: Inject QEMU drivers and EC test apps into WIM
         run: |
@@ -326,15 +323,6 @@ jobs:
             dism.exe /Apply-Image /ImageFile:"$wimPath" /Index:1 /ApplyDir:"${osLetter}:\"
             if ($LASTEXITCODE -ne 0) { throw "Failed to apply WIM with exit code $LASTEXITCODE" }
 
-            if (-not $env:ACPITABL_DAT_PATH) {
-              throw 'ACPITABL_DAT_PATH is not set'
-            }
-
-            $acpiTargetDir = "${osLetter}:\Windows\System32"
-            New-Item -Path $acpiTargetDir -ItemType Directory -Force | Out-Null
-            Copy-Item -Path $env:ACPITABL_DAT_PATH -Destination (Join-Path $acpiTargetDir 'ACPITABL.dat') -Force
-            Write-Host "Copied ACPITABL.dat to ${acpiTargetDir}"
-
             Write-Host "Creating boot files on ${efiLetter}:\"
             bcdboot "${osLetter}:\Windows" /s "${efiLetter}:" /f UEFI
             if ($LASTEXITCODE -ne 0) { throw "bcdboot failed with exit code $LASTEXITCODE" }
@@ -371,3 +359,38 @@ jobs:
           # its tag untouched; --clobber replaces the asset from the previous run.
           gh release upload latest $zipPath --repo $env:GITHUB_REPOSITORY --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Failed to upload os-image.zip to the latest release.' }
+
+      - name: Upload E2E base
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: windows-acpi-e2e-base
+          path: staging/os-image.vhdx
+          retention-days: 1
+          if-no-files-found: error
+
+  windows-acpi-e2e:
+    name: Run Windows ACPI E2E
+    if: github.event_name == 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Download E2E base
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          name: windows-acpi-e2e-base
+          path: postbuild/os/build/ci-base
+
+      - name: Install devcontainer CLI
+        run: npm install --global @devcontainers/cli@0.88.0
+
+      - name: Run Windows ACPI E2E
+        run: |
+          make windows-acpi-e2e \
+            WINDOWS_ACPI_E2E_BASE_IMAGE=postbuild/os/build/ci-base/os-image.vhdx

@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: MIT
 #
 
-+include apps.pkg
-+include graphics.pkg
-+include InboxDrivers.pkg
-+include usb.pkg
++include Common\apps.pkg
++include Common\graphics.pkg
++include Common\InboxDrivers.pkg
++include Common\usb.pkg
 Microsoft-WinVOS-DeveloperTools-Package [Extra]
