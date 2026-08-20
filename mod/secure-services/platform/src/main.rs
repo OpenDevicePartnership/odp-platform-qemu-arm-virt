@@ -27,7 +27,9 @@ const TPM_CRB_TPM_BASE: u64 = 0x0C000000;
 #[cfg(target_os = "none")]
 fn main() -> ! {
     use core::cell::RefCell;
-    use ec_service_lib::services::{Battery, EcRelay, MctpSerialTransport, Thermal, TimeAlarm};
+    use ec_service_lib::services::{
+        Battery, EcRelay, MctpSerialTransport, Thermal, TimeAlarm, Ucsi,
+    };
     use ec_service_lib::MessageHandler;
     use odp_ffa::Function;
 
@@ -56,6 +58,7 @@ fn main() -> ! {
         .append(TimeAlarm::new(&relay))
         .append(ec_service_lib::services::FwMgmt::new())
         .append(ec_service_lib::services::Notify::new())
+        .append(Ucsi::new())
         .append(tpm)
         .run_message_loop()
         .expect("Error in run_message_loop");

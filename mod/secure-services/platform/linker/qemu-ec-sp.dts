@@ -27,6 +27,7 @@
 	 * EC_SVC_THERMAL		31f56da7-593c-4d72-a4b3-8fc7171ac073
 	 * EC_SVC_TIME_ALARM	23ea63ed-b593-46ea-b027-8924df88e92f
 	 * TPM2_SERVICE         17b862a4-1806-4faf-86b3-089a58353861
+	 * EC_SVC_UCSI          65467f50-827f-4e4f-8770-dbf4c3f77f45
 	 */
 
 	compatible = "arm,ffa-manifest-1.0";
@@ -39,7 +40,8 @@
 		   <0x0752cb25 0x7d4236ac 0xa73aefaa 0x7ed27788>,
 		   <0xa76df531 0x724d3c59 0xc78fb3a4 0x73c01a17>,
 		   <0xed63ea23 0xea4693b5 0x248927b0 0x2fe988df>,
-		   <0xa462b817 0xaf4f0618 0x9a08b386 0x61383558>;
+		   <0xa462b817 0xaf4f0618 0x9a08b386 0x61383558>,
+		   <0x507f4665 0x4f4e7f82 0xf4db7087 0x457ff7c3>;
 	id = <0x8002>;
 	execution-ctx-count = <1>;
 	exception-level = <2>; /* SEL1*/
