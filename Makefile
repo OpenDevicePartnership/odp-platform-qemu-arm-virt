@@ -39,6 +39,47 @@ run_os:
 	$(MAKE) -C mod/uefi run PATH_TO_OS=$(REPO_ROOT_IN_DEVCONTAINER)/postbuild/os/build/winvos.qcow2
 
 # ------------------------------------------------------------
+# Run the Windows ACPI thermal end-to-end test
+# ------------------------------------------------------------
+WINDOWS_ACPI_E2E_REPO ?= OpenDevicePartnership/odp-platform-qemu-arm-virt
+WINDOWS_ACPI_E2E_RELEASE ?= latest
+WINDOWS_ACPI_E2E_BOOT_TIMEOUT ?= 900
+WINDOWS_ACPI_E2E_HOST_ROOT ?= $(REPO_ROOT_IN_HOST)
+WINDOWS_ACPI_E2E_BASE_IMAGE ?=
+
+windows-acpi-e2e-host-preflight:
+	@missing=; \
+	for tool in git make devcontainer docker; do \
+		command -v "$$tool" >/dev/null 2>&1 || missing="$$missing $$tool"; \
+	done; \
+	[ -z "$$missing" ] || { echo "ERROR: missing host tools:$$missing" >&2; exit 1; }
+	@docker info >/dev/null 2>&1 \
+		|| { echo "ERROR: a usable Docker daemon is required" >&2; exit 1; }
+
+ifneq ($(IN_DEVCONTAINER),1)
+windows-acpi-e2e: windows-acpi-e2e-host-preflight
+endif
+
+windows-acpi-e2e:
+ifeq ($(IN_DEVCONTAINER),1)
+	@WINDOWS_ACPI_E2E_REPO="$(WINDOWS_ACPI_E2E_REPO)" \
+		WINDOWS_ACPI_E2E_RELEASE="$(WINDOWS_ACPI_E2E_RELEASE)" \
+		WINDOWS_ACPI_E2E_BOOT_TIMEOUT="$(WINDOWS_ACPI_E2E_BOOT_TIMEOUT)" \
+		WINDOWS_ACPI_E2E_HOST_ROOT="$(WINDOWS_ACPI_E2E_HOST_ROOT)" \
+		WINDOWS_ACPI_E2E_BASE_IMAGE="$(WINDOWS_ACPI_E2E_BASE_IMAGE)" \
+		scripts/run-windows-acpi-e2e.sh
+else
+	git submodule update --init --recursive
+	$(MAKE) builder-image
+	$(DC_RUN) -- make windows-acpi-e2e IN_DEVCONTAINER=1 \
+		WINDOWS_ACPI_E2E_REPO="$(WINDOWS_ACPI_E2E_REPO)" \
+		WINDOWS_ACPI_E2E_RELEASE="$(WINDOWS_ACPI_E2E_RELEASE)" \
+		WINDOWS_ACPI_E2E_BOOT_TIMEOUT="$(WINDOWS_ACPI_E2E_BOOT_TIMEOUT)" \
+		WINDOWS_ACPI_E2E_HOST_ROOT="$(WINDOWS_ACPI_E2E_HOST_ROOT)" \
+		WINDOWS_ACPI_E2E_BASE_IMAGE="$(WINDOWS_ACPI_E2E_BASE_IMAGE)"
+endif
+
+# ------------------------------------------------------------
 # Run the EC firmware (mod/ec/platform/dev-qemu) in RISC-V QEMU
 # ------------------------------------------------------------
 # Note: This is a separate QEMU instance from the ARM QEMU instance running UEFI+Windows.
@@ -85,5 +126,6 @@ clean:
 	$(MAKE) -C mod clean
 	$(MAKE) -C e2e-tests clean
 	$(MAKE) -C postbuild/os clean
+	rm -rf .e2e
 	rm -rf docs/book
-.PHONY: all mod secure-services secure-services-test uefi ec run run_ec docs e2e-test run_os clean
+.PHONY: all mod secure-services secure-services-test uefi ec run run_ec docs e2e-test run_os windows-acpi-e2e windows-acpi-e2e-host-preflight clean
