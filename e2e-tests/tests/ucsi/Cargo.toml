@@ -1,0 +1,19 @@
+# Cargo package manifest for the UCSI E2E test application.
+#
+# SPDX-License-Identifier: MIT
+#
+
+[package]
+name = "ucsi"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ffa = { path = "../../ffa" }
+test-support = { path = "../../test-support" }
+uefi = { version = "0.34", features = [
+    "panic_handler",
+    "alloc",
+    "global_allocator",
+] }
+log = { version = "0.4", default-features = false }

@@ -21,6 +21,9 @@ pub const BATTERY_UUID: Uuid = uuid::uuid!("25cb5207-ac36-427d-aaef-3aa78877d27e
 /// EC TimeAlarm service UUID: 23ea63ed-b593-46ea-b027-8924df88e92f
 pub const TIME_ALARM_UUID: Uuid = uuid::uuid!("23ea63ed-b593-46ea-b027-8924df88e92f");
 
+/// EC UCSI service UUID: 65467f50-827f-4e4f-8770-dbf4c3f77f45
+pub const UCSI_UUID: Uuid = uuid::uuid!("65467f50-827f-4e4f-8770-dbf4c3f77f45");
+
 const FFA_MSG_SEND_DIRECT_REQ2: u64 = 0xC400008D;
 const FFA_MSG_SEND_DIRECT_RESP2: u64 = 0xC400008E;
 const FFA_INTERRUPT: u64 = 0x84000062;

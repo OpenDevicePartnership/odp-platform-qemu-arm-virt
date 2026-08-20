@@ -11,7 +11,6 @@ include ../Common.mk
 
 # Build output paths
 TARGET_DIR := target/aarch64-unknown-uefi/release
-TPM_EFI := $(TARGET_DIR)/tpm.efi
 
 # Two-QEMU EC-relay services. Each entry drives one generated vdrive +
 # relay-run-<svc> target below. The test EFI basename is the service key
@@ -36,9 +35,8 @@ EC_SERIAL_TIMEOUT  ?= $(QEMU_TIMEOUT)
 # Virtual drive directories for UEFI Shell to find test EFI binaries.
 # Each test runs in its own vdrive so the shared startup.nsh finds exactly
 # one binary (no parameterising the shell). Relay vdrives are generated
-# from RELAY_SERVICES below as Build/vdrive-<svc>; the single-QEMU TPM
-# path stages its own.
-VDRIVE_TPM_DIR := Build/vdrive-tpm
+# from RELAY_SERVICES below as Build/vdrive-<svc>; the single-QEMU TPM and
+# UCSI vdrives have explicit Build/vdrive-tpm / Build/vdrive-ucsi rules.
 
 # Shared generic UEFI shell startup script (runs the single .efi on the
 # vdrive), reused by every per-test vdrive so new service tests don't each
@@ -84,9 +82,6 @@ cp $(2) $(1)/
 cp $(STARTUP_NSH) $(1)/startup.nsh
 endef
 
-$(VDRIVE_TPM_DIR): build $(TPM_EFI) $(STARTUP_NSH)
-	$(call make-vdrive,$(VDRIVE_TPM_DIR),$(TPM_EFI))
-
 # Generate one vdrive rule per relay service: Build/vdrive-<svc> stages
 # <svc>'s EFI (hyphens -> underscores) with the shared startup.nsh.
 define relay-vdrive-rule
@@ -94,6 +89,13 @@ Build/vdrive-$(1): build $(TARGET_DIR)/$(subst -,_,$(1)).efi $(STARTUP_NSH)
 	$$(call make-vdrive,Build/vdrive-$(1),$(TARGET_DIR)/$(subst -,_,$(1)).efi)
 endef
 $(foreach svc,$(RELAY_SERVICES),$(eval $(call relay-vdrive-rule,$(svc))))
+
+# Single-QEMU service vdrives: two explicit targets share one recipe, each
+# setting its own EFI basename (Cargo bin name).
+Build/vdrive-tpm:  EFI_BASENAME := tpm
+Build/vdrive-ucsi: EFI_BASENAME := ucsi
+Build/vdrive-tpm Build/vdrive-ucsi: build $(STARTUP_NSH)
+	$(call make-vdrive,$@,$(TARGET_DIR)/$(EFI_BASENAME).efi)
 
 # ------------------------------------------------------------
 # Run tests with timeout, capture output, report results
@@ -107,22 +109,37 @@ $(COVERAGE_PLUGIN): builder-image
 	$(call ENDGROUP)
 
 .PHONY: test-sp-services
-test-sp-services: $(VDRIVE_TPM_DIR) $(COVERAGE_PLUGIN)
+test-sp-services:
+	@set -e; \
+	$(MAKE) sp-service-run-tpm; \
+	$(MAKE) sp-service-run-ucsi
+
+# Explicit single-QEMU service runs (no EC sidecar). Two public targets
+# share one recipe; each sets its service name and the exact "N passed,
+# 0 failed" count, threaded into scripts/test-sp-services.sh so a truncated
+# but all-green run (e.g. TPM stopping at 22, UCSI at 6) is rejected, not
+# silently accepted by the generic parser. test-sp-services invokes these
+# sequentially so concurrent QEMU instances never collide on Build/.
+.PHONY: sp-service-run-tpm sp-service-run-ucsi
+sp-service-run-tpm:  SERVICE := tpm
+sp-service-run-tpm:  EXPECTED_PASS := 23
+sp-service-run-ucsi: SERVICE := ucsi
+sp-service-run-ucsi: EXPECTED_PASS := 7
+sp-service-run-tpm:  Build/vdrive-tpm  $(COVERAGE_PLUGIN)
+sp-service-run-ucsi: Build/vdrive-ucsi $(COVERAGE_PLUGIN)
+sp-service-run-tpm sp-service-run-ucsi:
 	@mkdir -p Build
-	@echo "=== Running SP services E2E tests (timeout=$(QEMU_TIMEOUT)s) ==="
-ifeq ($(SERIAL_TEE),1)
-else
-	@echo "    (serial output streaming to Build/test-output.log)"
-endif
-	$(call GROUP,SP services E2E tests)
+	@echo "=== Running single-QEMU $(SERVICE) e2e (timeout=$(QEMU_TIMEOUT)s) ==="
+	$(call GROUP,Single-QEMU $(SERVICE) e2e)
 	@$(DC_RUN) -- scripts/test-sp-services.sh \
 		$(BIOS_FV_DIR) \
 		e2e-tests/Build \
-		e2e-tests/$(VDRIVE_TPM_DIR) \
+		e2e-tests/Build/vdrive-$(SERVICE) \
 		e2e-tests/$(COVERAGE_PLUGIN) \
 		e2e-tests/$(COVERAGE_LOG) \
 		$(QEMU_TIMEOUT) \
 		$(SERIAL_TEE) \
+		$(EXPECTED_PASS) \
 		-- $(QEMU_COMMON_ARGS)
 	$(call ENDGROUP)
 

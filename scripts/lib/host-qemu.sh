@@ -49,6 +49,43 @@ set_host_pflash_tpm_args() {
     )
 }
 
+# classify_test_results <test-output> <qemu-exit> [expected-pass]
+#   Pure classifier (no process side effects) for a captured host serial
+#   log. Shared by the single-QEMU and relay runners so the acceptance
+#   contract lives in one place. Returns:
+#     0  banner present, exactly the required "N passed, 0 failed", exit 0
+#     1  banner missing, [FAIL] present, timed out, or any other failure
+#   When expected-pass is a positive integer, N must equal it exactly
+#   (single-QEMU services pin their own count: TPM=23, UCSI=7); when empty,
+#   any non-negative N is accepted (relay path, where the count varies per
+#   service).
+classify_test_results() {
+    local test_output="$1" qemu_exit="$2" expected_pass="${3:-}"
+    local count_re='[0-9]+'
+    [ -n "$expected_pass" ] && count_re="$expected_pass"
+    local results_re="^--- Results: ${count_re} passed, 0 failed ---\$"
+
+    if ! grep -q "EC Secure Partition E2E Tests" "$test_output"; then
+        echo "RESULT: TESTS NEVER RAN (banner not found in output)"
+        return 1
+    elif grep -q "\[FAIL\]" "$test_output"; then
+        echo "RESULT: SOME TESTS FAILED"
+        return 1
+    elif [ "$qemu_exit" = "0" ] && grep -qE "$results_re" "$test_output"; then
+        echo "RESULT: ALL TESTS PASSED"
+        return 0
+    elif [ "$qemu_exit" = "124" ]; then
+        echo "RESULT: TIMED OUT (no test output seen)"
+        return 1
+    elif [ -n "$expected_pass" ] && grep -qE '^--- Results: [0-9]+ passed, 0 failed ---$' "$test_output"; then
+        echo "RESULT: WRONG PASS COUNT (expected exactly $expected_pass passed, 0 failed)"
+        return 1
+    else
+        echo "RESULT: NO TEST OUTPUT FOUND (exit code $qemu_exit)"
+        return 1
+    fi
+}
+
 # run_host_efi_and_parse_results
 #   Canonical EFI runner shared by the single-QEMU TPM path
 #   (test-sp-services.sh) and the two-QEMU thermal path
@@ -73,6 +110,10 @@ set_host_pflash_tpm_args() {
 #                      `-chardev serial,id=ec-link,path=$EC_PTY`
 #                      `-serial chardev:ec-link` to host QEMU's args so
 #                      the host can talk to a pre-launched EC sidecar.
+#     EXPECTED_PASS    If a positive integer, the results line must report
+#                      exactly that many passed (single-QEMU services pin
+#                      their own count). If empty/unset, any non-negative
+#                      count is accepted (relay path).
 #
 #   Caller responsibilities (NOT done here):
 #     - require_swtpm_tools / require_host_qemu_tools
@@ -159,20 +200,6 @@ run_host_efi_and_parse_results() {
     grep -E "\[(PASS|FAIL)\]" "$TEST_OUTPUT" || true
     echo ""
 
-    if ! grep -q "EC Secure Partition E2E Tests" "$TEST_OUTPUT"; then
-        echo "RESULT: TESTS NEVER RAN (banner not found in output)"
-        return 1
-    elif grep -q "\[FAIL\]" "$TEST_OUTPUT"; then
-        echo "RESULT: SOME TESTS FAILED"
-        return 1
-    elif [ "$QEMU_EXIT" = "0" ] && grep -qE '^--- Results: [0-9]+ passed, 0 failed ---$' "$TEST_OUTPUT"; then
-        echo "RESULT: ALL TESTS PASSED"
-        return 0
-    elif [ "$QEMU_EXIT" = "124" ]; then
-        echo "RESULT: TIMED OUT (no test output seen)"
-        return 1
-    else
-        echo "RESULT: NO TEST OUTPUT FOUND (exit code $QEMU_EXIT)"
-        return 1
-    fi
+    classify_test_results "$TEST_OUTPUT" "$QEMU_EXIT" "${EXPECTED_PASS:-}"
+    return $?
 }
