@@ -27,3 +27,5 @@ BaseTools/
 *.iso
 *.qcow2
 *.vhdx
+/postbuild/os/build/
+/.e2e/

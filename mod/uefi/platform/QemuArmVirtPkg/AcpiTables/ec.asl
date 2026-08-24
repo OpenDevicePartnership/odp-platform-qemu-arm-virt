@@ -10,10 +10,10 @@ DefinitionBlock ("SsdtEc.aml", "SSDT", 2, "QEMUAR", "EC      ", 1) {
 
   Scope(\_SB)
   {
-    //#include "ffa.asl"
+    #include "ffa.asl"
     #include "hid.asl"
     //#include "battery.asl"
-    //#include "thermal.asl"
+    #include "thermal.asl"
     //#include "rtc.asl"
 
   //
@@ -31,6 +31,10 @@ DefinitionBlock ("SsdtEc.aml", "SSDT", 2, "QEMUAR", "EC      ", 1) {
   
     Method(ECHO, 0x1, NotSerialized) {
       Return(Arg0) // Echo back input
+    }
+
+    Method (RTMP, 0x0, NotSerialized) {
+      Return (\_SB.SKIN._TMP ())
     }
 
     Method (_STA) {

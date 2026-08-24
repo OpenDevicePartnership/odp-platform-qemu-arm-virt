@@ -47,7 +47,10 @@ RUN apt-get update && \
     gnupg2 \
     lcov \
     libgtk-3-0t64 \
+    libhivex-bin \
+    libguestfs-tools \
     libssl-dev \
+    linux-image-virtual \
     lld \
     llvm \
     jq \
@@ -69,6 +72,7 @@ RUN apt-get update && \
     swtpm \
     swtpm-tools \
     && \
+    chmod a+r /boot/vmlinuz-* && \
     rm -rf /var/lib/apt/lists/*
 
 ENV IN_DEVCONTAINER=1

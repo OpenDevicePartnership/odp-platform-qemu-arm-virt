@@ -48,6 +48,7 @@ EC_BINARY_LOCAL := $(EC_BUILD_DIR)/target/riscv32imac-unknown-none-elf/release/d
 # the artifact.
 EC_SUBMODULE_MANIFEST := ec/rust-toolchain.toml
 EC_SOURCES := $(if $(wildcard $(EC_SUBMODULE_MANIFEST)),$(shell find ec -type f \( -name '*.rs' -o -name 'Cargo.toml' -o -name 'Cargo.lock' -o -name 'build.rs' -o -name 'memory.x' \)))
+EC_HEAD_STAMP := ec-head.stamp
 
 # Phony alias — lets callers say `make ec` while the real rule is on the artifact.
 ec: $(EC_BINARY_LOCAL)
@@ -56,10 +57,16 @@ $(EC_SUBMODULE_MANIFEST):
 	@echo "=== Initializing mod/ec submodule ==="
 	cd $(REPO_ROOT_IN_HOST) && git submodule update --init --recursive -- mod/ec
 
-# Track the submodule's checked-out SHA via .git/modules/.../HEAD so a `git submodule
-# update` to a new commit (which doesn't necessarily change any file under mod/ec at
-# parse time) still invalidates the binary.
-$(EC_BINARY_LOCAL): $(EC_SUBMODULE_MANIFEST) $(EC_SOURCES) ../.git/modules/odp-embedded-controller/HEAD | builder-image
+# Update the stamp only when the checked-out submodule SHA changes. Resolving the
+# SHA through git works in regular clones and linked worktrees.
+$(EC_HEAD_STAMP): $(EC_SUBMODULE_MANIFEST) FORCE
+	@head=$$(git -C ec rev-parse HEAD); \
+	if [ "$$head" != "$$(cat $@ 2>/dev/null)" ]; then \
+		printf '%s\n' "$$head" > "$@.new"; \
+		mv "$@.new" "$@"; \
+	fi
+
+$(EC_BINARY_LOCAL): $(EC_SUBMODULE_MANIFEST) $(EC_SOURCES) $(EC_HEAD_STAMP) | builder-image
 	$(call GROUP,Build EC firmware)
 	@$(DC_RUN) -w mod/$(EC_BUILD_DIR) -- cargo build --release --locked
 	$(call ENDGROUP)
@@ -90,5 +97,6 @@ ec-clean:
 	@if [ -f $(EC_SUBMODULE_MANIFEST) ]; then \
 		$(DC_RUN) -w mod/$(EC_BUILD_DIR) -- cargo clean; \
 	fi
+	rm -f $(EC_HEAD_STAMP)
 
-.PHONY: all secure-services secure-services-test uefi uefi-only ec run_ec clean ec-clean
+.PHONY: all secure-services secure-services-test uefi uefi-only ec run_ec clean ec-clean FORCE

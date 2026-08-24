@@ -3,7 +3,8 @@
 #
 # SPDX-License-Identifier: MIT
 #
-# Required on PATH: qemu-system-riscv32, defmt-print, stdbuf, tee, setsid, timeout, pkill
+# Required on PATH: qemu-system-riscv32, defmt-print, stdbuf, tee, setsid,
+# timeout, ps, tail
 #
 # Functions intentionally assign EC_PID in the *caller's* shell scope
 # (no `local`) so the orchestrator's cleanup trap can reach the EC's
@@ -13,15 +14,10 @@
 # library does not modify them.
 
 # require_ec_qemu_tools
-#   Verifies the external tools this library needs are on PATH. In
-#   particular kill_ec_session relies on `pkill -s` to tear down the EC
-#   session's descendant process groups; without it teardown silently
-#   degrades and leaks `timeout` + `qemu-system-riscv32`. On any miss,
-#   prints the missing commands to stderr and returns 1 so the
-#   orchestrator can fail loudly at startup.
+#   Verifies the external tools this library needs are on PATH.
 require_ec_qemu_tools() {
     local cmd missing=()
-    for cmd in qemu-system-riscv32 defmt-print stdbuf tee setsid timeout pkill; do
+    for cmd in qemu-system-riscv32 defmt-print stdbuf tee setsid timeout ps tail; do
         command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
     done
     [ "${#missing[@]}" -eq 0 ] ||
@@ -105,17 +101,20 @@ discover_ec_pty() {
 # kill_ec_session
 #   Tears down the EC session (no-op if EC_PID is unset).
 #
-#   EC_PID is the session leader of a session created by `setsid` (in
-#   start_ec_qemu). Bash auto-enables job control for session-leader
-#   children, which puts each pipeline stage (timeout/tee/defmt-print)
-#   in its OWN process group inside the session — so a single
-#   `kill -- -$EC_PID` only signals the leader's own pgrp and leaks
-#   `timeout` + `qemu-system-riscv32`. Signal the whole session via
-#   `pkill -s` so every descendant process group is reached, then
-#   `kill -- -$EC_PID` as a belt-and-braces fallback.
+#   EC_PID is the session leader created by `setsid`. Select every PID in
+#   that exact session so pipeline process groups are cleaned without any
+#   process-name matching.
 kill_ec_session() {
-    [ -n "$EC_PID" ] || return 0
-    pkill -TERM -s "$EC_PID" 2>/dev/null
-    kill -- "-$EC_PID" 2>/dev/null
+    local pid pids=()
+    [[ "$EC_PID" =~ ^[0-9]+$ ]] || return 0
+    mapfile -t pids < <(ps -o pid= --sid "$EC_PID")
+    for pid in "${pids[@]}"; do
+        kill -TERM "$pid" 2>/dev/null || true
+    done
+    timeout 10 tail --pid="$EC_PID" -f /dev/null >/dev/null 2>&1 || true
+    mapfile -t pids < <(ps -o pid= --sid "$EC_PID")
+    for pid in "${pids[@]}"; do
+        kill -KILL "$pid" 2>/dev/null || true
+    done
     wait "$EC_PID" 2>/dev/null
 }

@@ -50,6 +50,15 @@ QEMU_DISPLAY="${QEMU_DISPLAY:-}"
 # devcontainer forwards.
 QEMU_VNC="${QEMU_VNC:-127.0.0.1:0}"
 
+if [ "${ODP_E2E_QEMU_PID_FILE+x}" = x ] && [ -z "$ODP_E2E_QEMU_PID_FILE" ]; then
+    echo "qemu-ec-wrapper: ODP_E2E_QEMU_PID_FILE must not be empty" >&2
+    exit 2
+fi
+if [ "${ODP_E2E_EC_PTY+x}" = x ] && [ -z "$ODP_E2E_EC_PTY" ]; then
+    echo "qemu-ec-wrapper: ODP_E2E_EC_PTY must not be empty" >&2
+    exit 2
+fi
+
 # Version/help probes must not get extra device args appended.
 for arg in "$@"; do
     case "$arg" in
@@ -57,6 +66,29 @@ for arg in "$@"; do
             exec "$REAL_QEMU" "$@"
             ;;
     esac
+done
+
+qemu_args=()
+secure_serial=""
+serial_index=0
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = -serial ] && [ "$#" -ge 2 ]; then
+        serial_index=$((serial_index + 1))
+        serial_backend="$2"
+        if [ "$serial_index" = 1 ] && [ -n "${ODP_E2E_SERIAL0_LOG:-}" ] \
+            && [ "$serial_backend" = stdio ]; then
+            serial_backend="file:$ODP_E2E_SERIAL0_LOG"
+        fi
+        if [ "$serial_index" = 2 ] && [ "${ODP_E2E_EC_PTY+x}" = x ]; then
+            secure_serial="$serial_backend"
+        else
+            qemu_args+=(-serial "$serial_backend")
+        fi
+        shift 2
+    else
+        qemu_args+=("$1")
+        shift
+    fi
 done
 
 extra=()
@@ -75,4 +107,20 @@ case "$QEMU_DISPLAY" in
     *)   extra+=(-display "$QEMU_DISPLAY") ;;
 esac
 
-exec "$REAL_QEMU" "$@" "${extra[@]}"
+if [ "${ODP_E2E_EC_PTY+x}" = x ]; then
+    extra+=(
+        -chardev "serial,id=odp-e2e-ec-link,path=${ODP_E2E_EC_PTY}"
+        -serial "chardev:odp-e2e-ec-link"
+    )
+    [ -z "$secure_serial" ] || extra+=(-serial "$secure_serial")
+fi
+
+if [ "${ODP_E2E_QEMU_PID_FILE+x}" = x ]; then
+    if [ -L "$ODP_E2E_QEMU_PID_FILE" ]; then
+        echo "qemu-ec-wrapper: refusing symlinked PID file" >&2
+        exit 2
+    fi
+    printf '%s\n' "$$" > "$ODP_E2E_QEMU_PID_FILE"
+fi
+
+exec "$REAL_QEMU" "${qemu_args[@]}" "${extra[@]}"

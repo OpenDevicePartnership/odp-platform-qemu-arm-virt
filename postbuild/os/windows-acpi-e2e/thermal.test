@@ -1,0 +1,2 @@
+# ec-test-lib converts the original 2900..=3200 deciKelvin contract to Celsius.
+thermal.get_temperature => ok_in_range 16.85..=46.85;
