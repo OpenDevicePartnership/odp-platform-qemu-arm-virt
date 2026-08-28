@@ -205,6 +205,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucsi"
+version = "0.1.0"
+dependencies = [
+ "ffa",
+ "log",
+ "test-support",
+ "uefi",
+]
+
+[[package]]
 name = "uefi"
 version = "0.34.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

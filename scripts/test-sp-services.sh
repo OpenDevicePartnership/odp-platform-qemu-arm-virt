@@ -29,6 +29,7 @@ usage() {
     cat <<'EOF'
 Usage: test-sp-services.sh BIOS_FV_DIR BUILD_DIR VDRIVE_DIR \
                            COVERAGE_PLUGIN COVERAGE_LOG HOST_TIMEOUT SERIAL_TEE \
+                           EXPECTED_PASS \
                            -- <qemu-common-args...>
 
 Positional args (all required, in order):
@@ -39,24 +40,27 @@ Positional args (all required, in order):
   COVERAGE_LOG     Path to write QEMU coverage PC trace
   HOST_TIMEOUT     Seconds for host QEMU run (positive integer)
   SERIAL_TEE       1 = tee QEMU serial to stdout AND file; 0 = file only
+  EXPECTED_PASS    Exact "N passed" count this service must report (positive
+                   integer); the run fails unless the results line is exactly
+                   "EXPECTED_PASS passed, 0 failed"
 
 After --, all remaining args are passed verbatim to qemu-system-aarch64
 (typically the QEMU_COMMON_ARGS from Common.mk).
 
 Exit codes:
-  0  — banner present, "N passed, 0 failed" line present, QEMU exit 0
-  1  — banner missing, [FAIL] present, timed out, or other failure
+  0  — banner present, "EXPECTED_PASS passed, 0 failed" line present, QEMU exit 0
+  1  — banner missing, [FAIL] present, wrong count, timed out, or other failure
 EOF
 }
 
 # ----- fixed positional contract -----
-# Compact, array-preserving: 7 fixed positionals, an explicit `--`, then
+# Compact, array-preserving: 8 fixed positionals, an explicit `--`, then
 # the verbatim QEMU common args. No named-option parser — the sole caller
 # is e2e-tests/Makefile.
 case "${1-}" in -h|--help) usage; exit 0 ;; esac
 
-if [ "$#" -lt 8 ]; then
-    echo "ERROR: expected 7 positional args + '--' before QEMU args" >&2
+if [ "$#" -lt 9 ]; then
+    echo "ERROR: expected 8 positional args + '--' before QEMU args" >&2
     usage >&2
     exit 2
 fi
@@ -68,7 +72,8 @@ COVERAGE_PLUGIN="$4"
 COVERAGE_LOG="$5"
 HOST_TIMEOUT="$6"
 SERIAL_TEE="$7"
-shift 7
+EXPECTED_PASS="$8"
+shift 8
 
 if [ "${1-}" != "--" ]; then
     echo "ERROR: expected '--' separator before QEMU args (got: ${1-})" >&2
@@ -92,6 +97,9 @@ esac
 case "$SERIAL_TEE" in
     0|1) ;;
     *) echo "ERROR: SERIAL_TEE must be 0 or 1 (got: $SERIAL_TEE)" >&2; exit 2 ;;
+esac
+case "$EXPECTED_PASS" in
+    ''|*[!0-9]*|0) echo "ERROR: EXPECTED_PASS must be a positive integer (got: $EXPECTED_PASS)" >&2; exit 2 ;;
 esac
 
 # ----- tool preconditions -----
