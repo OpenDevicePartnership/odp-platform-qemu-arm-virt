@@ -4,7 +4,7 @@
 
 WinVOS is a pared down Windows OS image that is convenient for basic development while also booting relatively quickly under QEMU.  
 
-The image is built by the `build_os_image` GitHub Actions workflow (`.github/workflows/build-os.yml`), which injects the QEMU drivers listed in `prebuilt/driverlist.txt`. Pull requests build the image for validation only; pushes to `main` and manual runs publish `os-image.zip` as an asset on the rolling `latest` prerelease. Running `make run_os` or `make qcow2` downloads and unzips that asset into `prebuilt/ValidationOS.vhdx`. The download is anonymous, so no `gh auth login` is needed. To build manually, download the ISO from https://aka.ms/DownloadValidationOS_arm64.
+The image is built by the `build_os_image` GitHub Actions workflow (`.github/workflows/build-os.yml`), which injects the QEMU drivers listed in `prebuilt/driverlist.txt`. Pull requests build the image for validation only; pushes to `main` and manual runs publish `os-image.zip` as an asset on the rolling `latest` prerelease. The release image intentionally excludes repository ACPI content. Running `make run_os` or `make -C postbuild/os qcow2` downloads the base into `prebuilt/ValidationOS.vhdx`, compiles the current platform ACPI, and injects it into the local `build/winvos.qcow2` overlay. The download is anonymous, so no `gh auth login` is needed. To build manually, download the ISO from https://aka.ms/DownloadValidationOS_arm64.
 
 
 ## Booting QEMU `virt` to Windows
@@ -15,7 +15,7 @@ After you have created a ValidationOS.vhdx with your required files, simply copy
 This will generate the qcow2 image from the vhdx and run your BIOS in the parent folder path and boot to a command prompt. Your output display will be redirected to VNC port 5900 by default. You can use and VNC Viewer to open the display `127.0.0.1:5900`. 
 
 If you want you can force regeneration of the winvos.qcow2 image using
-    `make qcow2`
+    `make -C postbuild/os qcow2`
 
 ## Connecting with Windbg
 
