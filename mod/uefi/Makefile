@@ -6,13 +6,6 @@
 
 include ../../Common.mk
 
-# Unix sockets used to connect QEMU's virtual I2C controller and PL061 GPIO
-# to an external embedded controller (EC) QEMU instance. The EC side creates
-# the socket servers; this QEMU connects to them as a client (server=off).
-# Set to empty to disable (e.g. `make run EC_I2C_SOCK= EC_GPIO_SOCK=`).
-EC_I2C_SOCK ?= /tmp/qemu-ec-i2c.sock
-EC_GPIO_SOCK ?= /tmp/qemu-ec-gpio.sock
-
 # QEMU display mode. `vnc` (the default) keeps the flow headless over VNC
 # (port 5900, forwarded by the devcontainer); `gtk` renders in a native window
 # (e.g. `make run_os QEMU_DISPLAY=gtk`); `none` disables display.
@@ -61,7 +54,7 @@ builder-shell: builder-image
 
 run: builder-image
 	@$(DC_RUN) -w mod/uefi/patina-qemu -- \
-		env REAL_QEMU=$(QEMU_PATH) EC_I2C_SOCK=$(EC_I2C_SOCK) EC_GPIO_SOCK=$(EC_GPIO_SOCK) QEMU_DISPLAY=$(QEMU_DISPLAY) \
+		env REAL_QEMU=$(QEMU_PATH) EC_I2C_SOCK=$(EC_I2C_SOCK) EC_GPIO_SOCK=$(EC_GPIO_SOCK) EC_UART_SOCK=$(EC_UART_SOCK) QEMU_DISPLAY=$(QEMU_DISPLAY) \
 		$(if $(ODP_E2E_QEMU_PID_FILE),ODP_E2E_QEMU_PID_FILE=$(ODP_E2E_QEMU_PID_FILE),) \
 		$(if $(ODP_E2E_EC_PTY),ODP_E2E_EC_PTY=$(ODP_E2E_EC_PTY),) \
 		$(if $(ODP_E2E_SERIAL0_LOG),ODP_E2E_SERIAL0_LOG=$(ODP_E2E_SERIAL0_LOG),) \

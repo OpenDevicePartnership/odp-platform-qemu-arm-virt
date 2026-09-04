@@ -77,11 +77,14 @@ $(EC_BINARY_LOCAL): $(EC_SUBMODULE_MANIFEST) $(EC_SOURCES) $(EC_HEAD_STAMP) | bu
 # devcontainer's bundled qemu-system-riscv32 (via the QEMU env var) so it never
 # attempts a docker pull. The `env` prefix is how we thread QEMU through dc-run.sh,
 # which only forwards a fixed set of --remote-env vars. qemu-ec.sh serves the
-# /tmp/qemu-ec-{i2c,gpio}.sock sockets that `make run_os` connects to for EC
+# /tmp/qemu-ec-{i2c,gpio,uart}.sock sockets that `make run_os` connects to for EC
 # co-simulation. Runs in the foreground; Ctrl-C to stop.
 run_ec: $(EC_BINARY_LOCAL) | builder-image
 	@$(DC_RUN) -w mod/$(EC_BUILD_DIR) -- \
 		env QEMU=/usr/local/bin/qemu-system-riscv32 \
+		EC_I2C_SOCK=$(EC_I2C_SOCK) \
+		EC_GPIO_SOCK=$(EC_GPIO_SOCK) \
+		EC_UART_SOCK=$(EC_UART_SOCK) \
 		./qemu-ec.sh target/riscv32imac-unknown-none-elf/release/dev-qemu
 
 # ------------------------------------------------------------
