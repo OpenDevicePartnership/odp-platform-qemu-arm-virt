@@ -43,6 +43,13 @@ BIOS_FV_DIR := mod/uefi/patina-qemu/Build/QemuArmVirtPkg/DEBUG_CLANGPDB/FV
 # owning the build rule.
 EC_BINARY := mod/ec/platform/dev-qemu/target/riscv32imac-unknown-none-elf/release/dev-qemu
 
+# Shared endpoints for the ARM host and RISC-V EC QEMU instances. The EC owns
+# the socket servers; the host connects as a client. Command-line overrides
+# propagate through recursive Make invocations.
+EC_I2C_SOCK ?= /tmp/qemu-ec-i2c.sock
+EC_GPIO_SOCK ?= /tmp/qemu-ec-gpio.sock
+EC_UART_SOCK ?= /tmp/qemu-ec-uart.sock
+
 QEMU_COMMON_ARGS := \
 	-semihosting -cpu max,sve=off,sme=off -smp 4 \
 	-machine virt,secure=on,virtualization=on,gic-version=3,mte=on,iommu=smmuv3 \

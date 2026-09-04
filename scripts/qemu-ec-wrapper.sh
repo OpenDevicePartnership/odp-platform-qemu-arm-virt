@@ -12,11 +12,12 @@
 # Behaviour:
 #   - Forwards all args to the real qemu binary ($REAL_QEMU, default the
 #     devcontainer's /usr/local/bin/qemu-system-aarch64).
-#   - When the EC socket paths are configured (non-empty), appends the two
+#   - When the EC socket paths are configured (non-empty), appends the three
 #     client chardevs the custom ARM virt machine looks up by id
 #     ("ec-i2c-controller" for the socket-backed I2C controller, "gpio0" for the
-#     PL061 line behind the i2c-hid interrupt). The EC QEMU instance creates
-#     these socket *servers*; we connect as a client (server=off). `reconnect-ms`
+#     PL061 line behind the i2c-hid interrupt, and "ec-uart" for the MCTP
+#     transport). The EC QEMU instance creates these socket *servers*; we connect
+#     as a client (server=off). `reconnect-ms`
 #     makes the host keep retrying the connection, so the ordering is
 #     unconstrained: the host may start before the EC (it retries until the EC
 #     server appears) and the EC may be restarted underneath a running host
@@ -24,8 +25,8 @@
 #     The chardevs are attached even if the socket files don't exist yet — the
 #     client simply sits disconnected and retries. To disable EC wiring entirely
 #     (plain `make run` with no EC), set the paths empty
-#     (`make run EC_I2C_SOCK= EC_GPIO_SOCK=`); then nothing is appended and qemu
-#     boots normally.
+#     (`make run EC_I2C_SOCK= EC_GPIO_SOCK= EC_UART_SOCK=`); then nothing is
+#     appended and qemu boots normally.
 #   - Passes through untouched for `--version`/`-version` probes so patina's
 #     QueryQemuVersion keeps working.
 
@@ -37,6 +38,7 @@ REAL_QEMU="${REAL_QEMU:-/usr/local/bin/qemu-system-aarch64}"
 # corresponding chardev via the `[ -n ]` guards below.
 EC_I2C_SOCK="${EC_I2C_SOCK-/tmp/qemu-ec-i2c.sock}"
 EC_GPIO_SOCK="${EC_GPIO_SOCK-/tmp/qemu-ec-gpio.sock}"
+EC_UART_SOCK="${EC_UART_SOCK-/tmp/qemu-ec-uart.sock}"
 
 # Reconnect retry interval (milliseconds) for the client chardevs. Lets the
 # host survive the EC restarting underneath it and reconnect on its own.
@@ -79,7 +81,7 @@ while [ "$#" -gt 0 ]; do
             && [ "$serial_backend" = stdio ]; then
             serial_backend="file:$ODP_E2E_SERIAL0_LOG"
         fi
-        if [ "$serial_index" = 2 ] && [ "${ODP_E2E_EC_PTY+x}" = x ]; then
+        if [ "$serial_index" = 2 ] && { [ "${ODP_E2E_EC_PTY+x}" = x ] || [ -n "$EC_UART_SOCK" ]; }; then
             secure_serial="$serial_backend"
         else
             qemu_args+=(-serial "$serial_backend")
@@ -111,6 +113,12 @@ if [ "${ODP_E2E_EC_PTY+x}" = x ]; then
     extra+=(
         -chardev "serial,id=odp-e2e-ec-link,path=${ODP_E2E_EC_PTY}"
         -serial "chardev:odp-e2e-ec-link"
+    )
+    [ -z "$secure_serial" ] || extra+=(-serial "$secure_serial")
+elif [ -n "$EC_UART_SOCK" ]; then
+    extra+=(
+        -chardev "socket,id=ec-uart,path=${EC_UART_SOCK},server=off,reconnect-ms=${EC_RECONNECT_MS}"
+        -serial "chardev:ec-uart"
     )
     [ -z "$secure_serial" ] || extra+=(-serial "$secure_serial")
 fi
