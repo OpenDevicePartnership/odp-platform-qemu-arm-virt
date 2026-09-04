@@ -16,6 +16,10 @@ OS_IMAGE_ASSET ?= os-image.zip
 OS_IMAGE_ASSET_FILE ?= os-image.vhdx
 OS_IMAGE_REPO ?= OpenDevicePartnership/odp-platform-qemu-arm-virt
 
+ACPI_TABLES_DIR := ../../mod/uefi/platform/QemuArmVirtPkg/AcpiTables
+ACPI_TABLE_SOURCES := $(wildcard $(ACPI_TABLES_DIR)/*.asl)
+ACPI_TABLE_OUTPUT := build/acpi/ACPITABL.dat
+
 BIOS_FLASH0 := ../../$(BIOS_FV_DIR)/SECURE_FLASH0.fd
 BIOS_EFI    := ../../$(BIOS_FV_DIR)/QEMU_EFI.fd
 BIOS_OUTPUTS := $(BIOS_FLASH0) $(BIOS_EFI)
@@ -47,11 +51,23 @@ $(OS_IMAGE_INPUT):
 	echo "Downloaded $(OS_IMAGE_INPUT)."
 
 # ------------------------------------------------------------
-# Generate qcow2 image from VHDX image
+# Generate qcow2 overlay with current platform ACPI
 # ------------------------------------------------------------
-$(OS_IMAGE_OUTPUT): $(OS_IMAGE_INPUT)
-	mkdir -p build
-	qemu-img convert -f vhdx -O qcow2 $< $(OS_IMAGE_OUTPUT)
+$(ACPI_TABLE_OUTPUT): $(ACPI_TABLE_SOURCES)
+	mkdir -p $(dir $@)
+	iasl -tc -p $(dir $@)ec -I $(ACPI_TABLES_DIR) $(ACPI_TABLES_DIR)/ec.asl
+	cp $(dir $@)ec.aml $@
+
+$(OS_IMAGE_OUTPUT): $(OS_IMAGE_INPUT) $(ACPI_TABLE_OUTPUT)
+	@set -eu; \
+	cd $(dir $@); \
+	temporary="$(notdir $@).tmp"; \
+	rm -f "$$temporary"; \
+	trap 'rm -f "$$temporary"' EXIT; \
+	qemu-img create -q -f qcow2 -F vhdx -b "../$(OS_IMAGE_INPUT)" "$$temporary"; \
+	guestfish -a "$$temporary" -i upload "$(abspath $(ACPI_TABLE_OUTPUT))" /Windows/System32/ACPITABL.dat; \
+	mv "$$temporary" $(notdir $@); \
+	trap - EXIT
 
 qcow2: $(OS_IMAGE_OUTPUT)
 
