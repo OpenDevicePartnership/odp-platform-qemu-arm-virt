@@ -15,7 +15,7 @@ DefinitionBlock ("SsdtEc.aml", "SSDT", 2, "QEMUAR", "EC      ", 1) {
     #include "hid.asl"
     #include "battery.asl"
     #include "thermal.asl"
-    //#include "rtc.asl"
+    #include "rtc.asl"
 
   //
   // EC Test interface to load KMDF driver and map methods
@@ -120,6 +120,43 @@ DefinitionBlock ("SsdtEc.aml", "SSDT", 2, "QEMUAR", "EC      ", 1) {
 
     Method (TGVR, 0x2, NotSerialized) {
       Return (\_SB.CIO1.GVAR (Arg0, Arg1))
+    }
+
+    /******************* Time/Alarm Test Methods *******************************/
+    Method (_GCP, 0, Serialized) {
+      Return (\_SB.RTC._GCP ())
+    }
+
+    Method (_GRT, 0, Serialized) {
+      Return (\_SB.RTC._GRT ())
+    }
+
+    Method (_SRT, 1, Serialized) {
+      Return (\_SB.RTC._SRT (Arg0))
+    }
+
+    Method (_GWS, 1, Serialized) {
+      Return (\_SB.RTC._GWS (Arg0))
+    }
+
+    Method (_CWS, 1, Serialized) {
+      Return (\_SB.RTC._CWS (Arg0))
+    }
+
+    Method (_STV, 2, NotSerialized) {
+      Return (\_SB.RTC._STV (Arg0, Arg1))
+    }
+
+    Method (_TIV, 1, Serialized) {
+      Return (\_SB.RTC._TIV (Arg0))
+    }
+
+    Method (_STP, 2, NotSerialized) {
+      Return (\_SB.RTC._STP (Arg0, Arg1))
+    }
+
+    Method (_TIP, 1, Serialized) {
+      Return (\_SB.RTC._TIP (Arg0))
     }
 
     /********************* UCSI Test Methods **********************************/
