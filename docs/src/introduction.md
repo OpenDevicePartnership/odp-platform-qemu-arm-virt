@@ -25,6 +25,12 @@ Build and boot the Windows image:
 make run_os
 ```
 
+Build and run the virtual EC:
+
+```console
+make run_ec
+```
+
 Run the end-to-end test suite:
 
 ```console

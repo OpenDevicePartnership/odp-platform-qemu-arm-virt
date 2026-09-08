@@ -1,3 +1,7 @@
 # QEMU Guide
 
-This guide covers setting up QEMU, booting a Windows image, enabling WinDbg, and customizing ACPI content for the QEMU platform.
+This guide covers:
+- Setting up QEMU (both for Windows and the virtual EC)
+- Booting a Windows image
+- Enabling WinDbg
+- Customizing ACPI content for the QEMU platform
