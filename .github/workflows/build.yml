@@ -28,6 +28,9 @@ jobs:
           components: rustfmt, clippy
           targets: aarch64-unknown-none, aarch64-unknown-uefi
 
+      - name: Install host test dependencies
+        run: sudo apt-get update --quiet && sudo apt-get install --yes --no-install-recommends pkg-config libudev-dev
+
       - name: Run pre-commit checks
         run: .husky/pre-commit
 

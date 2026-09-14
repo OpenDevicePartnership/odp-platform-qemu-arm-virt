@@ -14,6 +14,7 @@ ARG NASM_VERSION=2.16.01
 ARG CSPELL_VERSION=5.20.0
 ARG MARKDOWNLINT_VERSION=0.32.2
 ARG MDBOOK_VERSION=0.4.52
+ARG CARGO_XWIN_VERSION=0.23.0
 
 # Visit this NuGet package version page to see the latest version available
 # https://dev.azure.com/projectmu/acpica/_artifacts/feed/mu_iasl/NuGet/edk2-acpica-iasl/versions
@@ -50,6 +51,7 @@ RUN apt-get update && \
     libhivex-bin \
     libguestfs-tools \
     libssl-dev \
+    libudev-dev \
     linux-image-virtual \
     lld \
     llvm \
@@ -58,6 +60,7 @@ RUN apt-get update && \
     make \
     mono-complete \
     npm \
+    pkg-config \
     sudo \
     unzip \
     uuid-dev \
@@ -115,7 +118,7 @@ USER vscode
 RUN RUST_VERSION=1.92.0 && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERSION} --profile minimal && \
     rustup component add clippy rustfmt rust-src && \
-    rustup target add aarch64-unknown-none aarch64-unknown-uefi riscv32imac-unknown-none-elf && \
+    rustup target add aarch64-unknown-none aarch64-unknown-uefi riscv32imac-unknown-none-elf aarch64-pc-windows-msvc && \
     rustup component add llvm-tools-preview && \
     cargo install cargo-binstall@1.17.7 --locked && \
     cargo binstall -y cargo-binutils && \
@@ -123,6 +126,7 @@ RUN RUST_VERSION=1.92.0 && \
     cargo binstall -y cargo-tarpaulin@0.31.5 && \
     cargo binstall -y sccache@0.10.0 && \
     cargo binstall -y defmt-print@1.0.0 && \
+    cargo binstall -y cargo-xwin@${CARGO_XWIN_VERSION} && \
     cargo binstall -y mdbook@${MDBOOK_VERSION}
 USER root
 

@@ -39,13 +39,20 @@ run_os:
 	$(MAKE) -C mod/uefi run PATH_TO_OS=$(REPO_ROOT_IN_DEVCONTAINER)/postbuild/os/build/winvos.qcow2
 
 # ------------------------------------------------------------
-# Run the Windows ACPI thermal end-to-end test
+# Run the Windows ACPI end-to-end tests
 # ------------------------------------------------------------
+WINDOWS_ACPI_E2E_SERVICE ?= thermal
 WINDOWS_ACPI_E2E_REPO ?= OpenDevicePartnership/odp-platform-qemu-arm-virt
 WINDOWS_ACPI_E2E_RELEASE ?= latest
 WINDOWS_ACPI_E2E_BOOT_TIMEOUT ?= 900
 WINDOWS_ACPI_E2E_HOST_ROOT ?= $(REPO_ROOT_IN_HOST)
 WINDOWS_ACPI_E2E_BASE_IMAGE ?=
+
+ifneq ($(WINDOWS_ACPI_E2E_SERVICE),thermal)
+ifneq ($(WINDOWS_ACPI_E2E_SERVICE),ucsi)
+$(error WINDOWS_ACPI_E2E_SERVICE must be thermal or ucsi)
+endif
+endif
 
 windows-acpi-e2e-host-preflight:
 	@missing=; \
@@ -62,7 +69,8 @@ endif
 
 windows-acpi-e2e:
 ifeq ($(IN_DEVCONTAINER),1)
-	@WINDOWS_ACPI_E2E_REPO="$(WINDOWS_ACPI_E2E_REPO)" \
+	@WINDOWS_ACPI_E2E_SERVICE="$(WINDOWS_ACPI_E2E_SERVICE)" \
+		WINDOWS_ACPI_E2E_REPO="$(WINDOWS_ACPI_E2E_REPO)" \
 		WINDOWS_ACPI_E2E_RELEASE="$(WINDOWS_ACPI_E2E_RELEASE)" \
 		WINDOWS_ACPI_E2E_BOOT_TIMEOUT="$(WINDOWS_ACPI_E2E_BOOT_TIMEOUT)" \
 		WINDOWS_ACPI_E2E_HOST_ROOT="$(WINDOWS_ACPI_E2E_HOST_ROOT)" \
@@ -72,6 +80,7 @@ else
 	git submodule update --init --recursive
 	$(MAKE) builder-image
 	$(DC_RUN) -- make windows-acpi-e2e IN_DEVCONTAINER=1 \
+		WINDOWS_ACPI_E2E_SERVICE="$(WINDOWS_ACPI_E2E_SERVICE)" \
 		WINDOWS_ACPI_E2E_REPO="$(WINDOWS_ACPI_E2E_REPO)" \
 		WINDOWS_ACPI_E2E_RELEASE="$(WINDOWS_ACPI_E2E_RELEASE)" \
 		WINDOWS_ACPI_E2E_BOOT_TIMEOUT="$(WINDOWS_ACPI_E2E_BOOT_TIMEOUT)" \

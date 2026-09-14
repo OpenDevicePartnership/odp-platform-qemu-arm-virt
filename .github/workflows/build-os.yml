@@ -370,11 +370,15 @@ jobs:
           if-no-files-found: error
 
   windows-acpi-e2e:
-    name: Run Windows ACPI E2E
+    name: Run Windows ACPI E2E (${{ matrix.service }})
     if: github.event_name == 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [thermal, ucsi]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -393,4 +397,14 @@ jobs:
       - name: Run Windows ACPI E2E
         run: |
           make windows-acpi-e2e \
+            WINDOWS_ACPI_E2E_SERVICE=${{ matrix.service }} \
             WINDOWS_ACPI_E2E_BASE_IMAGE=postbuild/os/build/ci-base/os-image.vhdx
+
+      - name: Retain Windows ACPI evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: windows-acpi-e2e-${{ matrix.service }}
+          path: .e2e/evidence/
+          retention-days: 7
+          if-no-files-found: warn

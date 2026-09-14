@@ -1,0 +1,16 @@
+[package]
+name = "windows-acpi-e2e-ucsi-smoke"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.92"
+publish = false
+
+[dependencies]
+ec-test-lib = { git = "https://github.com/OpenDevicePartnership/odp-platform-common", rev = "e4486f53942b4e4c6eda83fdb040298f2264b4c7" }
+
+[[bin]]
+name = "smoke"
+path = "src/main.rs"
+
+[workspace]
