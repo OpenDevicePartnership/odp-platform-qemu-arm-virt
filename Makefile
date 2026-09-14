@@ -50,7 +50,9 @@ WINDOWS_ACPI_E2E_BASE_IMAGE ?=
 
 ifneq ($(WINDOWS_ACPI_E2E_SERVICE),thermal)
 ifneq ($(WINDOWS_ACPI_E2E_SERVICE),ucsi)
-$(error WINDOWS_ACPI_E2E_SERVICE must be thermal or ucsi)
+ifneq ($(WINDOWS_ACPI_E2E_SERVICE),battery)
+$(error WINDOWS_ACPI_E2E_SERVICE must be thermal, ucsi, or battery)
+endif
 endif
 endif
 

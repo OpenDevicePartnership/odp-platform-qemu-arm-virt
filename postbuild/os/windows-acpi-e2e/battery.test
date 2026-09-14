@@ -1,0 +1,4 @@
+battery.get_bst.battery_state => eq 1;
+battery.get_bst.battery_present_rate => eq 1500;
+battery.get_bst.battery_remaining_capacity => eq 2304;
+battery.get_bst.battery_present_voltage => eq 11850;
