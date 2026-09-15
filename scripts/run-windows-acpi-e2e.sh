@@ -32,8 +32,11 @@ odp_e2e_select_service() {
     ODP_E2E_SERVICE="$1"
     case "$ODP_E2E_SERVICE" in
         thermal) return 0 ;;
+        battery)
+            ODP_E2E_SECURE_UUID=25cb5207-ac36-427d-aaef-3aa78877d27e
+            return 0 ;;
         ucsi) ;;
-        *) odp_e2e_error "invalid WINDOWS_ACPI_E2E_SERVICE: $1 (expected thermal or ucsi)"; return 1 ;;
+        *) odp_e2e_error "invalid WINDOWS_ACPI_E2E_SERVICE: $1 (expected thermal, ucsi, or battery)"; return 1 ;;
     esac
     local adapter="$ODP_E2E_PAYLOAD_DIR/adapters/ucsi" package previous
     ODP_E2E_REQUIRED_DRIVERS=()
@@ -361,7 +364,7 @@ odp_e2e_verify_secure_manifest() {
         odp_e2e_error "generated secure partition manifest missing: $(odp_e2e_host_path "$manifest")"
         return 1
     fi
-    if [ "$ODP_E2E_SERVICE" = ucsi ]; then
+    if [ "$ODP_E2E_SERVICE" != thermal ]; then
         hex="${ODP_E2E_SECURE_UUID//-/}"
         tuple='<'
         for ((offset = 0; offset < 32; offset += 8)); do
@@ -371,7 +374,7 @@ odp_e2e_verify_secure_manifest() {
         tuple="${tuple% }>"
     fi
     grep -Eq \
-        "^[[:space:]]*(uuid[[:space:]]*=[[:space:]]*)?$tuple[,;][[:space:]]*$" \
+        "^[[:space:]]*(uuid[[:space:]]*=[[:space:]]*)?${tuple}[,;][[:space:]]*$" \
         "$manifest" || {
         odp_e2e_error "generated secure partition manifest $ODP_E2E_SERVICE UUID word tuple mismatch: $(odp_e2e_host_path "$manifest")"
         return 1
@@ -390,13 +393,14 @@ odp_e2e_verify_secure_manifest() {
 }
 
 odp_e2e_inject_run_payload() {
-    local overlay="$1" acpi="$2" run_cmd="$3" payload="$4" destination=thermal.test
+    local overlay="$1" acpi="$2" run_cmd="$3" payload="$4" destination="$ODP_E2E_SERVICE.test"
     [ "$ODP_E2E_SERVICE" != ucsi ] || destination=smoke.exe
     odp_e2e_guestfish -a "$overlay" -i \
         mkdir-p /odp-e2e \
         : rm-f /odp-e2e/result.txt \
         : rm-f /odp-e2e/thermal.log \
         : rm-f /odp-e2e/ucsi.log \
+        : rm-f /odp-e2e/battery.log \
         : upload "$acpi" /Windows/System32/ACPITABL.dat \
         : upload "$run_cmd" /odp-e2e/run.cmd \
         : upload "$payload" "/odp-e2e/$destination"
@@ -437,7 +441,10 @@ odp_e2e_extract_results() {
 }
 
 odp_e2e_verify_result() {
-    local result="$1" log="$2" runtime="$3" status="$4" file
+    local run_dir="$1" file total=1
+    local result="$run_dir/result.txt" log="$run_dir/$ODP_E2E_SERVICE.log"
+    local runtime="$run_dir/ec.log" status="$run_dir/qemu-status.txt"
+    [ "$ODP_E2E_SERVICE" != ucsi ] || runtime="$run_dir/serial0.log"
     for file in "$result" "$log" "$runtime" "$status"; do
         [ -f "$file" ] || { odp_e2e_error "missing result evidence: $file"; return 1; }
     done
@@ -451,15 +458,18 @@ odp_e2e_verify_result() {
         tr -d '\r' < "$log" | grep -qxF 'UCSI SUMMARY: 4 passed, 0 failed' || {
             odp_e2e_error "missing complete UCSI success summary"; return 1;
         }
-        grep -Eq "msg_loop: request: MsgSendDirectReq2\\(DirectMessage \\{.*uuid: $ODP_E2E_SECURE_UUID," "$runtime" || {
-            odp_e2e_error "missing current-run UCSI secure request trace"; return 1;
-        }
     else
+        [ "$ODP_E2E_SERVICE" != battery ] || total=4
         tr -d '\r' < "$log" | grep -qxF \
-            '[test] SUMMARY C:\odp-e2e\thermal.test: 1 passed, 0 failed (total 1)' \
+            "[test] SUMMARY C:\\odp-e2e\\$ODP_E2E_SERVICE.test: $total passed, 0 failed (total $total)" \
             && tr -d '\r' < "$log" | grep -Eq '^\[test\] PASS L[0-9]+:' \
             && grep -qF 'Starting uart service' "$runtime" || {
-            odp_e2e_error "missing thermal success summary or live EC marker"; return 1;
+            odp_e2e_error "missing $ODP_E2E_SERVICE success summary or live EC marker"; return 1;
+        }
+    fi
+    if [ "$ODP_E2E_SERVICE" != thermal ]; then
+        grep -Eq "msg_loop: request: MsgSendDirectReq2\\(DirectMessage \\{.*uuid: $ODP_E2E_SECURE_UUID," "$run_dir/serial0.log" || {
+            odp_e2e_error "missing current-run ${ODP_E2E_SERVICE^^} secure request trace"; return 1;
         }
     fi
 }
@@ -470,7 +480,7 @@ odp_e2e_finish_run() {
     evidence="$evidence_root/$(basename "$run_dir")"
     [ ! -L "$evidence" ] || return 1
     mkdir -p "$evidence" || return 1
-    for file in result.txt thermal.log ucsi.log boot.log ec.log ec-qemu-stdout.log \
+    for file in result.txt thermal.log ucsi.log battery.log boot.log ec.log ec-qemu-stdout.log \
         ec-qemu-stderr.log qemu-status.txt firmware-build.log acpi-build.log \
         release.json secure-partition-manifest.dts secure_mm.log serial0.log \
         smoke-build.log smoke-pe.txt smoke-imports.txt smoke.exe smoke.exe.sha256 \
@@ -497,7 +507,8 @@ odp_e2e_stop_qemu() {
 odp_e2e_cleanup_processes() {
     odp_e2e_stop_qemu "$QEMU_PID"
     QEMU_PID=
-    kill_ec_session
+    # A terminated EC's wait status must not skip evidence collection.
+    kill_ec_session || odp_e2e_log "EC sidecar exit status: $?"
     EC_PID=
 }
 
@@ -546,7 +557,7 @@ odp_e2e_run_qemu() {
     printf '%s\n' "$status" > "$run_dir/qemu-status.txt"
     odp_e2e_collect_runner_log "$runner_log" "$run_dir" || return 1
     # Hafnium emits the SP's FFA_CONSOLE_LOG on UART0.
-    if [ "$ODP_E2E_SERVICE" = ucsi ] && [ -f "$run_dir/serial0.log" ]; then
+    if [ "$ODP_E2E_SERVICE" != thermal ] && [ -f "$run_dir/serial0.log" ]; then
         cat "$run_dir/serial0.log" >> "$run_dir/boot.log"
     fi
 }
@@ -554,7 +565,7 @@ odp_e2e_run_qemu() {
 odp_e2e_execute() {
     local run_dir="$1" cache="$2" repo="$3" release="$4" timeout_seconds="$5"
     local release_json asset_id digest archive base base_before base_after acpi
-    local manifest overlay ec_pty= payload="$ODP_E2E_PAYLOAD_DIR/thermal.test"
+    local manifest overlay ec_pty='' payload="$ODP_E2E_PAYLOAD_DIR/$ODP_E2E_SERVICE.test"
     local supplied_base="${WINDOWS_ACPI_E2E_BASE_IMAGE:-}" targets=(ec uefi)
     if [ "$ODP_E2E_SERVICE" = ucsi ]; then
         [ -z "${MAKEFILES:-}" ] || {
@@ -621,7 +632,7 @@ odp_e2e_execute() {
         || return 1
     odp_e2e_set_startup_shell "$overlay" "$run_dir/winlogon.reg" || return 1
 
-    if [ "$ODP_E2E_SERVICE" = thermal ]; then
+    if [ "$ODP_E2E_SERVICE" != ucsi ]; then
         export EC_I2C_SOCK="$run_dir/ec-i2c.sock"
         export EC_GPIO_SOCK="$run_dir/ec-gpio.sock"
         odp_e2e_log "Starting EC sidecar"
@@ -641,10 +652,7 @@ odp_e2e_execute() {
     base_after="$(sha256sum "$base" | awk '{print $1}')"
     [ "$base_before" = "$base_after" ] || return 1
     odp_e2e_log "Verifying E2E result"
-    local runtime="$run_dir/ec.log"
-    [ "$ODP_E2E_SERVICE" != ucsi ] || runtime="$run_dir/serial0.log"
-    odp_e2e_verify_result "$run_dir/result.txt" "$run_dir/$ODP_E2E_SERVICE.log" \
-        "$runtime" "$run_dir/qemu-status.txt"
+    odp_e2e_verify_result "$run_dir"
 }
 
 odp_e2e_require_tools() {
@@ -657,7 +665,7 @@ odp_e2e_require_tools() {
     done
     [ "${#missing[@]}" -eq 0 ] \
         || odp_e2e_die "missing devcontainer tools: ${missing[*]}"
-    if [ "$ODP_E2E_SERVICE" = thermal ]; then
+    if [ "$ODP_E2E_SERVICE" != ucsi ]; then
         require_ec_qemu_tools || exit 1
     fi
 }
@@ -689,7 +697,7 @@ odp_e2e_main() {
     odp_e2e_preflight_libguestfs || exit 1
     run_dir="$cache/runs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
     odp_e2e_safe_path "$run_dir" "$cache" || odp_e2e_die "unsafe run path"
-    if [ "$ODP_E2E_SERVICE" = thermal ]; then
+    if [ "$ODP_E2E_SERVICE" != ucsi ]; then
         for socket in "$run_dir/ec-i2c.sock" "$run_dir/ec-gpio.sock"; do
             odp_e2e_safe_path "$socket" "$cache" || odp_e2e_die "unsafe socket path"
             odp_e2e_validate_socket_path "$socket" || exit 1
