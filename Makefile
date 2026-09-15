@@ -47,6 +47,8 @@ WINDOWS_ACPI_E2E_RELEASE ?= latest
 WINDOWS_ACPI_E2E_BOOT_TIMEOUT ?= 900
 WINDOWS_ACPI_E2E_HOST_ROOT ?= $(REPO_ROOT_IN_HOST)
 WINDOWS_ACPI_E2E_BASE_IMAGE ?=
+WINDOWS_ACPI_E2E_CACHE_DIR ?=
+export WINDOWS_ACPI_E2E_RUN_ID ?=
 
 ifneq ($(WINDOWS_ACPI_E2E_SERVICE),thermal)
 ifneq ($(WINDOWS_ACPI_E2E_SERVICE),ucsi)
@@ -66,10 +68,10 @@ windows-acpi-e2e-host-preflight:
 		|| { echo "ERROR: a usable Docker daemon is required" >&2; exit 1; }
 
 ifneq ($(IN_DEVCONTAINER),1)
-windows-acpi-e2e: windows-acpi-e2e-host-preflight
+windows-acpi-e2e windows-acpi-e2e-all: windows-acpi-e2e-host-preflight
 endif
 
-windows-acpi-e2e:
+windows-acpi-e2e windows-acpi-e2e-all:
 ifeq ($(IN_DEVCONTAINER),1)
 	@WINDOWS_ACPI_E2E_SERVICE="$(WINDOWS_ACPI_E2E_SERVICE)" \
 		WINDOWS_ACPI_E2E_REPO="$(WINDOWS_ACPI_E2E_REPO)" \
@@ -77,17 +79,20 @@ ifeq ($(IN_DEVCONTAINER),1)
 		WINDOWS_ACPI_E2E_BOOT_TIMEOUT="$(WINDOWS_ACPI_E2E_BOOT_TIMEOUT)" \
 		WINDOWS_ACPI_E2E_HOST_ROOT="$(WINDOWS_ACPI_E2E_HOST_ROOT)" \
 		WINDOWS_ACPI_E2E_BASE_IMAGE="$(WINDOWS_ACPI_E2E_BASE_IMAGE)" \
-		scripts/run-windows-acpi-e2e.sh
+		WINDOWS_ACPI_E2E_CACHE_DIR="$(WINDOWS_ACPI_E2E_CACHE_DIR)" \
+		scripts/run-windows-acpi-e2e$(if $(filter windows-acpi-e2e-all,$@),-suite).sh
 else
 	git submodule update --init --recursive
 	$(MAKE) builder-image
-	$(DC_RUN) -- make windows-acpi-e2e IN_DEVCONTAINER=1 \
+	$(DC_RUN) -- make $@ IN_DEVCONTAINER=1 \
 		WINDOWS_ACPI_E2E_SERVICE="$(WINDOWS_ACPI_E2E_SERVICE)" \
 		WINDOWS_ACPI_E2E_REPO="$(WINDOWS_ACPI_E2E_REPO)" \
 		WINDOWS_ACPI_E2E_RELEASE="$(WINDOWS_ACPI_E2E_RELEASE)" \
 		WINDOWS_ACPI_E2E_BOOT_TIMEOUT="$(WINDOWS_ACPI_E2E_BOOT_TIMEOUT)" \
 		WINDOWS_ACPI_E2E_HOST_ROOT="$(WINDOWS_ACPI_E2E_HOST_ROOT)" \
-		WINDOWS_ACPI_E2E_BASE_IMAGE="$(WINDOWS_ACPI_E2E_BASE_IMAGE)"
+		WINDOWS_ACPI_E2E_BASE_IMAGE="$(WINDOWS_ACPI_E2E_BASE_IMAGE)" \
+		WINDOWS_ACPI_E2E_CACHE_DIR="$(WINDOWS_ACPI_E2E_CACHE_DIR)" \
+		WINDOWS_ACPI_E2E_RUN_ID="$$WINDOWS_ACPI_E2E_RUN_ID"
 endif
 
 # ------------------------------------------------------------
@@ -139,4 +144,4 @@ clean:
 	$(MAKE) -C postbuild/os clean
 	rm -rf .e2e
 	rm -rf docs/book
-.PHONY: all mod secure-services secure-services-test uefi ec run run_ec docs e2e-test run_os windows-acpi-e2e windows-acpi-e2e-host-preflight clean
+.PHONY: all mod secure-services secure-services-test uefi ec run run_ec docs e2e-test run_os windows-acpi-e2e windows-acpi-e2e-all windows-acpi-e2e-host-preflight clean

@@ -345,7 +345,7 @@ odp_e2e_guestfish() {
 }
 
 odp_e2e_preflight_libguestfs() {
-    local log="$ODP_E2E_CACHE_DIR/libguestfs-test-tool.log"
+    local log="$1"
     if TMPDIR="$ODP_E2E_TMPDIR" \
         LIBGUESTFS_CACHEDIR="$ODP_E2E_CACHE_DIR/libguestfs-cache" \
         LIBGUESTFS_TMPDIR="$ODP_E2E_CACHE_DIR/libguestfs-tmp" \
@@ -679,7 +679,7 @@ odp_e2e_main() {
     local release="${WINDOWS_ACPI_E2E_RELEASE:-latest}"
     local timeout_seconds="${WINDOWS_ACPI_E2E_BOOT_TIMEOUT:-900}"
     local cache="${WINDOWS_ACPI_E2E_CACHE_DIR:-$(odp_e2e_default_cache_dir)}"
-    local run_dir socket outcome=failure
+    local run_id run_dir evidence socket outcome=failure
     [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || odp_e2e_die "invalid base repository"
     [[ "$release" =~ ^[A-Za-z0-9_.-]+$ ]] || odp_e2e_die "invalid base release"
     [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || odp_e2e_die "invalid boot timeout"
@@ -691,19 +691,34 @@ odp_e2e_main() {
     ODP_E2E_CACHE_DIR="$cache"
     ODP_E2E_TMPDIR="$cache/work"
     export ODP_E2E_CACHE_DIR ODP_E2E_TMPDIR
-    mkdir -p "$cache/work" "$cache/libguestfs-cache" "$cache/libguestfs-tmp" \
-        "$cache/runs" "$cache/evidence"
-    odp_e2e_require_tools
-    odp_e2e_preflight_libguestfs || exit 1
-    run_dir="$cache/runs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    run_id="${WINDOWS_ACPI_E2E_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+    case "$run_id" in
+        *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-]*)
+            odp_e2e_die "invalid run ID (use only ASCII letters, digits, underscores, and hyphens)" ;;
+    esac
+    run_dir="$cache/runs/$run_id"
+    evidence="$cache/evidence/$run_id"
     odp_e2e_safe_path "$run_dir" "$cache" || odp_e2e_die "unsafe run path"
+    odp_e2e_safe_path "$evidence" "$cache" || odp_e2e_die "unsafe evidence path"
+    [ ! -e "$run_dir" ] && [ ! -L "$run_dir" ] \
+        && [ ! -e "$evidence" ] && [ ! -L "$evidence" ] \
+        || odp_e2e_die "run ID already exists: $run_id"
     if [ "$ODP_E2E_SERVICE" != ucsi ]; then
         for socket in "$run_dir/ec-i2c.sock" "$run_dir/ec-gpio.sock"; do
             odp_e2e_safe_path "$socket" "$cache" || odp_e2e_die "unsafe socket path"
             odp_e2e_validate_socket_path "$socket" || exit 1
         done
     fi
-    mkdir "$run_dir"
+    mkdir -p "$cache/work" "$cache/libguestfs-cache" "$cache/libguestfs-tmp" \
+        "$cache/runs" "$cache/evidence"
+    # Evidence outlives successful run directories, so reserve the identity here.
+    mkdir "$evidence" || odp_e2e_die "cannot reserve run ID: $run_id"
+    if ! mkdir "$run_dir"; then
+        rmdir "$evidence"
+        odp_e2e_die "cannot create run directory: $run_dir"
+    fi
+    odp_e2e_require_tools
+    odp_e2e_preflight_libguestfs "$evidence/libguestfs-test-tool.log" || exit 1
     trap odp_e2e_cleanup_processes EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
