@@ -35,8 +35,11 @@ odp_e2e_select_service() {
         battery)
             ODP_E2E_SECURE_UUID=25cb5207-ac36-427d-aaef-3aa78877d27e
             return 0 ;;
+        rtc)
+            ODP_E2E_SECURE_UUID=23ea63ed-b593-46ea-b027-8924df88e92f
+            return 0 ;;
         ucsi) ;;
-        *) odp_e2e_error "invalid WINDOWS_ACPI_E2E_SERVICE: $1 (expected thermal, ucsi, or battery)"; return 1 ;;
+        *) odp_e2e_error "invalid WINDOWS_ACPI_E2E_SERVICE: $1 (expected thermal, ucsi, battery, or rtc)"; return 1 ;;
     esac
     local adapter="$ODP_E2E_PAYLOAD_DIR/adapters/ucsi" package previous
     ODP_E2E_REQUIRED_DRIVERS=()
@@ -319,6 +322,38 @@ odp_e2e_build_ucsi_smoke() {
     printf '%s\n' "$run_dir/smoke.exe"
 }
 
+odp_e2e_build_rtc_cli() {
+    local run_dir="$1" revision source executable
+    revision="$(tr -d '\r\n' < "$ODP_E2E_PAYLOAD_DIR/adapters/rtc/platform-common-rev.txt")" || return 1
+    [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || {
+        odp_e2e_error "invalid RTC CLI source revision"; return 1;
+    }
+    source="$run_dir/cli-source"
+    if ! (
+        git init --quiet "$source" &&
+        git -C "$source" remote add origin https://github.com/dymk/odp-platform-common &&
+        git -C "$source" fetch --quiet --depth=1 origin "$revision" &&
+        git -C "$source" checkout --quiet --detach FETCH_HEAD &&
+        test "$(git -C "$source" rev-parse HEAD)" = "$revision" &&
+        cd "$source/ec" &&
+        cargo xwin build --locked --release --target aarch64-pc-windows-msvc -p ec-test-cli
+    ) > "$run_dir/rtc-cli-build.log" 2>&1; then
+        odp_e2e_error "RTC CLI build failed (details: $(odp_e2e_host_path "$run_dir/rtc-cli-build.log"))"
+        return 1
+    fi
+    executable="$source/ec/target/aarch64-pc-windows-msvc/release/ec-test-cli.exe"
+    odp_e2e_verify_arm64_pe "$executable" "$run_dir/rtc-cli-pe.txt" || return 1
+    llvm-readobj --coff-imports "$executable" > "$run_dir/rtc-cli-imports.txt" 2>&1 || return 1
+    if grep -qiE '^[[:space:]]*Name: VCRUNTIME140[.]dll[[:space:]]*$' "$run_dir/rtc-cli-imports.txt"; then
+        odp_e2e_error "RTC CLI imports VCRUNTIME140.dll, unavailable in WinVOS"
+        return 1
+    fi
+    printf '%s\n' "$revision" > "$run_dir/rtc-cli-revision.txt"
+    cp "$executable" "$run_dir/ec-test-cli.exe" || return 1
+    (cd "$run_dir" && sha256sum ec-test-cli.exe > ec-test-cli.exe.sha256) || return 1
+    printf '%s\n' "$run_dir/ec-test-cli.exe"
+}
+
 odp_e2e_make_overlay() {
     local base="$1" overlay="$2" root relative temporary
     [ -f "$base" ] && [ ! -L "$base" ] || return 1
@@ -394,6 +429,12 @@ odp_e2e_verify_secure_manifest() {
 
 odp_e2e_inject_run_payload() {
     local overlay="$1" acpi="$2" run_cmd="$3" payload="$4" destination="$ODP_E2E_SERVICE.test"
+    local cli="${5:-}"
+    local extra=()
+    if [ "$ODP_E2E_SERVICE" = rtc ]; then
+        [ -f "$cli" ] || { odp_e2e_error "missing rebuilt RTC CLI"; return 1; }
+        extra=(: upload "$cli" /ectest/ec-test-cli.exe)
+    fi
     [ "$ODP_E2E_SERVICE" != ucsi ] || destination=smoke.exe
     odp_e2e_guestfish -a "$overlay" -i \
         mkdir-p /odp-e2e \
@@ -401,9 +442,11 @@ odp_e2e_inject_run_payload() {
         : rm-f /odp-e2e/thermal.log \
         : rm-f /odp-e2e/ucsi.log \
         : rm-f /odp-e2e/battery.log \
+        : rm-f /odp-e2e/rtc.log \
         : upload "$acpi" /Windows/System32/ACPITABL.dat \
         : upload "$run_cmd" /odp-e2e/run.cmd \
-        : upload "$payload" "/odp-e2e/$destination"
+        : upload "$payload" "/odp-e2e/$destination" \
+        "${extra[@]}"
 }
 
 odp_e2e_set_startup_shell() {
@@ -460,6 +503,7 @@ odp_e2e_verify_result() {
         }
     else
         [ "$ODP_E2E_SERVICE" != battery ] || total=4
+        [ "$ODP_E2E_SERVICE" != rtc ] || total=42
         tr -d '\r' < "$log" | grep -qxF \
             "[test] SUMMARY C:\\odp-e2e\\$ODP_E2E_SERVICE.test: $total passed, 0 failed (total $total)" \
             && tr -d '\r' < "$log" | grep -Eq '^\[test\] PASS L[0-9]+:' \
@@ -480,8 +524,9 @@ odp_e2e_finish_run() {
     evidence="$evidence_root/$(basename "$run_dir")"
     [ ! -L "$evidence" ] || return 1
     mkdir -p "$evidence" || return 1
-    for file in result.txt thermal.log ucsi.log battery.log boot.log ec.log ec-qemu-stdout.log \
+    for file in result.txt thermal.log ucsi.log battery.log rtc.log boot.log ec.log ec-qemu-stdout.log \
         ec-qemu-stderr.log qemu-status.txt firmware-build.log acpi-build.log \
+        rtc-cli-build.log rtc-cli-pe.txt rtc-cli-imports.txt rtc-cli-revision.txt ec-test-cli.exe.sha256 \
         release.json secure-partition-manifest.dts secure_mm.log serial0.log \
         smoke-build.log smoke-pe.txt smoke-imports.txt smoke.exe smoke.exe.sha256 \
         base-image.txt image-validation.txt driver-store.txt driver-inventory.txt \
@@ -565,7 +610,7 @@ odp_e2e_run_qemu() {
 odp_e2e_execute() {
     local run_dir="$1" cache="$2" repo="$3" release="$4" timeout_seconds="$5"
     local release_json asset_id digest archive base base_before base_after acpi
-    local manifest overlay ec_pty='' payload="$ODP_E2E_PAYLOAD_DIR/$ODP_E2E_SERVICE.test"
+    local manifest overlay ec_pty='' cli='' payload="$ODP_E2E_PAYLOAD_DIR/$ODP_E2E_SERVICE.test"
     local supplied_base="${WINDOWS_ACPI_E2E_BASE_IMAGE:-}" targets=(ec uefi)
     if [ "$ODP_E2E_SERVICE" = ucsi ]; then
         [ -z "${MAKEFILES:-}" ] || {
@@ -614,6 +659,8 @@ odp_e2e_execute() {
     if [ "$ODP_E2E_SERVICE" = ucsi ]; then
         odp_e2e_validate_ucsi_drivers "$base" "$run_dir" || return 1
         payload="$(odp_e2e_build_ucsi_smoke "$run_dir")" || return 1
+    elif [ "$ODP_E2E_SERVICE" = rtc ]; then
+        cli="$(odp_e2e_build_rtc_cli "$run_dir")" || return 1
     fi
 
     odp_e2e_log "Building ${targets[*]} firmware (log: $(odp_e2e_host_path "$run_dir/firmware-build.log"))"
@@ -628,7 +675,7 @@ odp_e2e_execute() {
     overlay="$run_dir/overlay.qcow2"
     odp_e2e_make_overlay "$base" "$overlay" || return 1
     odp_e2e_inject_run_payload "$overlay" "$acpi" \
-        "$ODP_E2E_PAYLOAD_DIR/run.cmd" "$payload" \
+        "$ODP_E2E_PAYLOAD_DIR/run.cmd" "$payload" "$cli" \
         || return 1
     odp_e2e_set_startup_shell "$overlay" "$run_dir/winlogon.reg" || return 1
 
@@ -660,6 +707,7 @@ odp_e2e_require_tools() {
     local tools=(curl guestfish iasl jq make qemu-img qemu-system-aarch64 \
         realpath sha256sum swtpm tail timeout unzip virt-win-reg)
     [ "$ODP_E2E_SERVICE" != ucsi ] || tools+=(cargo cargo-xwin llvm-readobj)
+    [ "$ODP_E2E_SERVICE" != rtc ] || tools+=(git cargo cargo-xwin llvm-readobj)
     for tool in "${tools[@]}"; do
         command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
     done

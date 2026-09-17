@@ -1,0 +1,54 @@
+# The QEMU EC mock has a whole-second clock. Disable alarms before moving it.
+rtc.set_timer_value(ac, 4294967295) => is_ok;
+rtc.set_timer_value(dc, 4294967295) => is_ok;
+rtc.set_real_time(Buffer(16) {
+    0xEA, 0x07, 9, 17, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+}) => is_ok;
+rtc.get_real_time.unix_timestamp => in_range 1789646400..=1789646406;
+# Reset the reference so the advancement bound needs no DSL arithmetic.
+rtc.set_real_time(Buffer(16) {
+    0xEA, 0x07, 9, 17, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+}) => is_ok;
+sleep 3s;
+rtc.get_real_time.unix_timestamp => in_range 1789646402..=1789646406;
+
+# Observe expiry on both timers before clearing; no physical wake is required.
+rtc.clear_wake_status(ac) => is_ok;
+rtc.clear_wake_status(dc) => is_ok;
+rtc.set_expired_timer_wake_policy(ac, 4294967295) => is_ok;
+rtc.set_expired_timer_wake_policy(dc, 4294967295) => is_ok;
+rtc.set_timer_value(ac, 1) => is_ok;
+rtc.set_timer_value(dc, 1) => is_ok;
+sleep 3s;
+rtc.get_wake_status(ac).timer_expired => eq true;
+rtc.get_wake_status(dc).timer_expired => eq true;
+rtc.clear_wake_status(ac) => is_ok;
+rtc.get_wake_status(ac).timer_expired => eq false;
+rtc.get_wake_status(ac).timer_triggered_wake => eq false;
+rtc.get_wake_status(dc).timer_expired => eq true;
+rtc.clear_wake_status(dc) => is_ok;
+rtc.get_wake_status(dc).timer_expired => eq false;
+rtc.get_wake_status(dc).timer_triggered_wake => eq false;
+rtc.set_timer_value(ac, 4294967295) => is_ok;
+rtc.set_timer_value(dc, 4294967295) => is_ok;
+
+# With alarms quiescent, policies cannot be reset by expiry.
+rtc.set_expired_timer_wake_policy(dc, 45) => is_ok;
+rtc.set_expired_timer_wake_policy(ac, 45) => is_ok;
+rtc.get_expired_timer_wake_policy(ac).value => eq 45;
+rtc.set_expired_timer_wake_policy(ac, 0) => is_ok;
+rtc.get_expired_timer_wake_policy(ac).value => eq 0;
+rtc.get_expired_timer_wake_policy(dc).value => eq 45;
+rtc.set_expired_timer_wake_policy(ac, 4294967295) => is_ok;
+rtc.get_expired_timer_wake_policy(ac).value => eq 4294967295;
+rtc.get_expired_timer_wake_policy(dc).value => eq 45;
+rtc.set_expired_timer_wake_policy(ac, 45) => is_ok;
+rtc.set_expired_timer_wake_policy(dc, 45) => is_ok;
+rtc.get_expired_timer_wake_policy(dc).value => eq 45;
+rtc.set_expired_timer_wake_policy(dc, 0) => is_ok;
+rtc.get_expired_timer_wake_policy(dc).value => eq 0;
+rtc.get_expired_timer_wake_policy(ac).value => eq 45;
+rtc.set_expired_timer_wake_policy(dc, 4294967295) => is_ok;
+rtc.get_expired_timer_wake_policy(dc).value => eq 4294967295;
+rtc.get_expired_timer_wake_policy(ac).value => eq 45;
+rtc.set_expired_timer_wake_policy(ac, 4294967295) => is_ok;
