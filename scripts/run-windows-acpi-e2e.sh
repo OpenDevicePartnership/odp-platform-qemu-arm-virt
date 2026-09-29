@@ -331,7 +331,7 @@ odp_e2e_build_rtc_cli() {
     source="$run_dir/cli-source"
     if ! (
         git init --quiet "$source" &&
-        git -C "$source" remote add origin https://github.com/dymk/odp-platform-common &&
+        git -C "$source" remote add origin https://github.com/OpenDevicePartnership/odp-platform-common &&
         git -C "$source" fetch --quiet --depth=1 origin "$revision" &&
         git -C "$source" checkout --quiet --detach FETCH_HEAD &&
         test "$(git -C "$source" rev-parse HEAD)" = "$revision" &&

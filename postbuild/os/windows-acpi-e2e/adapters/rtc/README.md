@@ -8,10 +8,10 @@ RTC is also included in `windows-acpi-e2e-all` and the CI service matrix.
 
 The image's CLI predates timestamp Buffer literals and RTC status checking.
 The RTC run therefore builds the CLI from `platform-common-rev.txt` and
-replaces it only in the disposable guest overlay. The pin combines
-https://github.com/dymk/odp-platform-common/pull/2 and
-https://github.com/dymk/odp-platform-common/pull/3 for fork review; replace
-the fork source and revision with the merged upstream commit before promotion.
+replaces it only in the disposable guest overlay. The upstream pin includes
+RTC setter-status checking and timestamp Buffer support, merged in
+https://github.com/OpenDevicePartnership/odp-platform-common/pull/219 and
+https://github.com/OpenDevicePartnership/odp-platform-common/pull/220.
 The run preserves the CLI revision, binary hash, build log, and guest results.
 
 Milliseconds 0 for whole seconds follows the explicitly accepted existing
