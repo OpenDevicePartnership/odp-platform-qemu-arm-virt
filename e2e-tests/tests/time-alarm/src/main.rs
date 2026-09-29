@@ -15,8 +15,13 @@ use uefi::{boot, prelude::*};
 #[repr(u8)]
 enum TimeAlarmCommand {
     GetRealTime = 2,
+    SetRealTime = 3,
+    GetWakeStatus = 4,
+    ClearWakeStatus = 5,
     SetTimerValue = 6,
     GetTimerValue = 7,
+    SetExpiredTimerPolicy = 8,
+    GetExpiredTimerPolicy = 9,
 }
 
 impl From<TimeAlarmCommand> for u8 {
@@ -97,11 +102,23 @@ fn main() -> Status {
 fn test_time_alarm_command_family(ctx: &mut E2eContext) {
     test_get_real_time(ctx);
     test_timer_value_round_trip(ctx);
+    for (name, test) in [
+        (
+            "time_alarm_set_real_time_readback",
+            test_set_real_time as fn(&mut E2eContext, &str) -> Option<()>,
+        ),
+        ("time_alarm_clear_wake_status", test_clear_wake_status),
+        ("time_alarm_policy_set_get", test_policy_round_trip),
+    ] {
+        if test(ctx, name).is_some() {
+            ctx.pass(name);
+        }
+    }
 }
 
-fn get_real_time(ctx: &mut E2eContext) -> Option<Timestamp> {
+fn get_real_time(ctx: &mut E2eContext, name: &str) -> Option<Timestamp> {
     let payload = ctx.send_command(
-        "time_alarm_get_real_time",
+        name,
         &TIME_ALARM_UUID,
         TimeAlarmCommand::GetRealTime.into(),
         &[],
@@ -121,7 +138,7 @@ fn get_timer_value(ctx: &mut E2eContext, test_name: &str) -> Option<u32> {
 }
 
 fn test_get_real_time(ctx: &mut E2eContext) {
-    let Some(first) = get_real_time(ctx) else {
+    let Some(first) = get_real_time(ctx, "time_alarm_get_real_time") else {
         return;
     };
     if !first.is_expected_mock_shape() {
@@ -134,7 +151,7 @@ fn test_get_real_time(ctx: &mut E2eContext) {
 
     boot::stall(STALL_MICROSECONDS);
 
-    let Some(second) = get_real_time(ctx) else {
+    let Some(second) = get_real_time(ctx, "time_alarm_get_real_time") else {
         return;
     };
     if !second.is_expected_mock_shape() {
@@ -238,4 +255,219 @@ fn test_timer_value_round_trip(ctx: &mut E2eContext) {
     }
 
     ctx.pass(NAME);
+}
+
+fn require(ctx: &mut E2eContext, name: &str, condition: bool, reason: &str) -> Option<()> {
+    if condition {
+        Some(())
+    } else {
+        ctx.fail(name, reason);
+        None
+    }
+}
+
+fn scalar(ctx: &mut E2eContext, name: &str, command: TimeAlarmCommand, args: &[u8]) -> Option<u32> {
+    Some(
+        ctx.send_command(name, &TIME_ALARM_UUID, command.into(), args)?
+            .u32_at(0),
+    )
+}
+
+fn set(ctx: &mut E2eContext, name: &str, command: TimeAlarmCommand, args: &[u8]) -> Option<()> {
+    let status = scalar(ctx, name, command, args)?;
+    if status != 0 {
+        log::error!("  {name}: setter status={status:#x}");
+    }
+    require(ctx, name, status == 0, "setter returned nonzero status")
+}
+
+fn timer_args(timer: u32, value: u32) -> [u8; 8] {
+    let mut args = [0; 8];
+    args[..4].copy_from_slice(&timer.to_le_bytes());
+    args[4..].copy_from_slice(&value.to_le_bytes());
+    args
+}
+
+fn disable_timers(ctx: &mut E2eContext, name: &str) -> Option<()> {
+    for timer in 0..=1 {
+        set(
+            ctx,
+            name,
+            TimeAlarmCommand::SetTimerValue,
+            &timer_args(timer, u32::MAX),
+        )?;
+    }
+    Some(())
+}
+
+fn test_set_real_time(ctx: &mut E2eContext, name: &str) -> Option<()> {
+    disable_timers(ctx, name)?;
+    // 2026-09-17 12:00:00 UTC; the running EC mock has whole-second precision.
+    let timestamp = [0xEA, 0x07, 9, 17, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    set(ctx, name, TimeAlarmCommand::SetRealTime, &timestamp)?;
+    let mut previous = 12 * 3600;
+    for sample in 0..2 {
+        if sample == 1 {
+            boot::stall(STALL_MICROSECONDS);
+        }
+        let actual = get_real_time(ctx, name)?;
+        require(
+            ctx,
+            name,
+            actual.year == 2026
+                && actual.month == 9
+                && actual.day == 17
+                && actual.hour < 24
+                && actual.minute < 60
+                && actual.second < 60
+                && actual.valid == 1
+                && actual.milliseconds == 0
+                && actual.timezone == 0
+                && actual.daylight == 0
+                && actual.reserved_bytes == [0; 3],
+            "set time readback has incorrect date or metadata",
+        )?;
+        let seconds = actual.seconds_of_day();
+        let minimum = if sample == 0 { 0 } else { 2 };
+        require(
+            ctx,
+            name,
+            seconds
+                .checked_sub(previous)
+                .is_some_and(|delta| (minimum..=6).contains(&delta)),
+            "set time readback outside expected elapsed-second bounds",
+        )?;
+        previous = seconds;
+    }
+    Some(())
+}
+
+fn wake_status(ctx: &mut E2eContext, name: &str, timer: u32) -> Option<u32> {
+    let status = scalar(
+        ctx,
+        name,
+        TimeAlarmCommand::GetWakeStatus,
+        &timer.to_le_bytes(),
+    )?;
+    require(
+        ctx,
+        name,
+        status != u32::MAX,
+        "GetWakeStatus returned error sentinel",
+    )?;
+    Some(status)
+}
+
+fn test_clear_wake_status(ctx: &mut E2eContext, name: &str) -> Option<()> {
+    disable_timers(ctx, name)?;
+    for timer in 0u32..=1 {
+        set(
+            ctx,
+            name,
+            TimeAlarmCommand::ClearWakeStatus,
+            &timer.to_le_bytes(),
+        )?;
+        set(
+            ctx,
+            name,
+            TimeAlarmCommand::SetExpiredTimerPolicy,
+            &timer_args(timer, u32::MAX),
+        )?;
+        set(
+            ctx,
+            name,
+            TimeAlarmCommand::SetTimerValue,
+            &timer_args(timer, 1),
+        )?;
+    }
+    let mut status = [0; 2];
+    for _ in 0..2 {
+        boot::stall(STALL_MICROSECONDS);
+        status = [wake_status(ctx, name, 0)?, wake_status(ctx, name, 1)?];
+        if status.iter().all(|value| value & 1 != 0) {
+            break;
+        }
+    }
+    require(
+        ctx,
+        name,
+        status.iter().all(|value| value & 1 != 0),
+        "both timers must expire before testing clear",
+    )?;
+    for timer in 0u32..=1 {
+        set(
+            ctx,
+            name,
+            TimeAlarmCommand::ClearWakeStatus,
+            &timer.to_le_bytes(),
+        )?;
+        status[timer as usize] = 0;
+        let actual = [wake_status(ctx, name, 0)?, wake_status(ctx, name, 1)?];
+        require(
+            ctx,
+            name,
+            actual == status,
+            "clear must zero only the selected timer",
+        )?;
+    }
+    disable_timers(ctx, name)
+}
+
+fn test_policy_round_trip(ctx: &mut E2eContext, name: &str) -> Option<()> {
+    disable_timers(ctx, name)?;
+    for timer in 0..=1 {
+        let other = 1 - timer;
+        set(
+            ctx,
+            name,
+            TimeAlarmCommand::SetExpiredTimerPolicy,
+            &timer_args(other, 45),
+        )?;
+        for policy in [45, 0] {
+            set(
+                ctx,
+                name,
+                TimeAlarmCommand::SetExpiredTimerPolicy,
+                &timer_args(timer, policy),
+            )?;
+            let actual = scalar(
+                ctx,
+                name,
+                TimeAlarmCommand::GetExpiredTimerPolicy,
+                &timer.to_le_bytes(),
+            )?;
+            let unchanged = scalar(
+                ctx,
+                name,
+                TimeAlarmCommand::GetExpiredTimerPolicy,
+                &other.to_le_bytes(),
+            )?;
+            require(
+                ctx,
+                name,
+                actual == policy && unchanged == 45,
+                "policy readback or other timer's policy changed unexpectedly",
+            )?;
+        }
+        // NEVER readback is indistinguishable from the getter's error sentinel.
+        set(
+            ctx,
+            name,
+            TimeAlarmCommand::SetExpiredTimerPolicy,
+            &timer_args(timer, u32::MAX),
+        )?;
+        let unchanged = scalar(
+            ctx,
+            name,
+            TimeAlarmCommand::GetExpiredTimerPolicy,
+            &other.to_le_bytes(),
+        )?;
+        require(
+            ctx,
+            name,
+            unchanged == 45,
+            "setting NEVER changed the other timer's policy",
+        )?;
+    }
+    Some(())
 }
