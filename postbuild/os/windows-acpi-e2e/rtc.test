@@ -33,6 +33,7 @@ rtc.set_timer_value(ac, 4294967295) => is_ok;
 rtc.set_timer_value(dc, 4294967295) => is_ok;
 
 # With alarms quiescent, policies cannot be reset by expiry.
+# MAX checks setter acceptance and peer isolation, not NEVER readback: MAX is also the getter error sentinel.
 rtc.set_expired_timer_wake_policy(dc, 45) => is_ok;
 rtc.set_expired_timer_wake_policy(ac, 45) => is_ok;
 rtc.get_expired_timer_wake_policy(ac).value => eq 45;
@@ -40,7 +41,6 @@ rtc.set_expired_timer_wake_policy(ac, 0) => is_ok;
 rtc.get_expired_timer_wake_policy(ac).value => eq 0;
 rtc.get_expired_timer_wake_policy(dc).value => eq 45;
 rtc.set_expired_timer_wake_policy(ac, 4294967295) => is_ok;
-rtc.get_expired_timer_wake_policy(ac).value => eq 4294967295;
 rtc.get_expired_timer_wake_policy(dc).value => eq 45;
 rtc.set_expired_timer_wake_policy(ac, 45) => is_ok;
 rtc.set_expired_timer_wake_policy(dc, 45) => is_ok;
@@ -49,6 +49,5 @@ rtc.set_expired_timer_wake_policy(dc, 0) => is_ok;
 rtc.get_expired_timer_wake_policy(dc).value => eq 0;
 rtc.get_expired_timer_wake_policy(ac).value => eq 45;
 rtc.set_expired_timer_wake_policy(dc, 4294967295) => is_ok;
-rtc.get_expired_timer_wake_policy(dc).value => eq 4294967295;
 rtc.get_expired_timer_wake_policy(ac).value => eq 45;
 rtc.set_expired_timer_wake_policy(ac, 4294967295) => is_ok;

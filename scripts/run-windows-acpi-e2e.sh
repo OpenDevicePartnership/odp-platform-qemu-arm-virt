@@ -503,7 +503,7 @@ odp_e2e_verify_result() {
         }
     else
         [ "$ODP_E2E_SERVICE" != battery ] || total=4
-        [ "$ODP_E2E_SERVICE" != rtc ] || total=42
+        [ "$ODP_E2E_SERVICE" != rtc ] || total=40
         tr -d '\r' < "$log" | grep -qxF \
             "[test] SUMMARY C:\\odp-e2e\\$ODP_E2E_SERVICE.test: $total passed, 0 failed (total $total)" \
             && tr -d '\r' < "$log" | grep -Eq '^\[test\] PASS L[0-9]+:' \

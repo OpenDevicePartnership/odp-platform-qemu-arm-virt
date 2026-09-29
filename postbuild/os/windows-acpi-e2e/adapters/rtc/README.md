@@ -6,6 +6,11 @@ declarative test runner, Windows ACPI evaluation driver, SP, and EC sidecar.
 No physical wake, power-source switching, or notification delivery is tested.
 RTC is also included in `windows-acpi-e2e-all` and the CI service matrix.
 
+The 40 assertions cover timestamp set/readback and advancement, AC/DC
+expired-status clearing, and policy 0/45 readback and isolation. For policy
+MAX (0xFFFFFFFF), they check setter acceptance and that the peer remains at
+45, not NEVER readback: MAX is also the policy getter's error sentinel.
+
 The image's CLI predates timestamp Buffer literals and RTC status checking.
 The RTC run therefore builds the CLI from `platform-common-rev.txt` and
 replaces it only in the disposable guest overlay. The upstream pin includes
