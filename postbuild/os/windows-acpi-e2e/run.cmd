@@ -4,10 +4,11 @@ set ROOT=C:\odp-e2e
 set SERVICE=thermal
 set FAILURE=invalid Windows ACPI E2E service selection
 set "COMMAND_EXIT="
-del /f /q "%ROOT%\result.txt" "%ROOT%\thermal.log" "%ROOT%\ucsi.log" "%ROOT%\battery.log" >nul 2>&1
+del /f /q "%ROOT%\result.txt" "%ROOT%\thermal.log" "%ROOT%\ucsi.log" "%ROOT%\battery.log" "%ROOT%\rtc.log" >nul 2>&1
 if not "%~2"=="" goto fail
 if "%~1"=="ucsi" goto ucsi
 if "%~1"=="battery" set SERVICE=battery
+if "%~1"=="rtc" set SERVICE=rtc
 if not "%~1"=="" if not "%~1"=="%SERVICE%" goto fail
 
 set FAILURE=ec-test-cli declarative %SERVICE% test failed

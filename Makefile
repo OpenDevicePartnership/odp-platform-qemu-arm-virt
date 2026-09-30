@@ -53,7 +53,9 @@ export WINDOWS_ACPI_E2E_RUN_ID ?=
 ifneq ($(WINDOWS_ACPI_E2E_SERVICE),thermal)
 ifneq ($(WINDOWS_ACPI_E2E_SERVICE),ucsi)
 ifneq ($(WINDOWS_ACPI_E2E_SERVICE),battery)
-$(error WINDOWS_ACPI_E2E_SERVICE must be thermal, ucsi, or battery)
+ifneq ($(WINDOWS_ACPI_E2E_SERVICE),rtc)
+$(error WINDOWS_ACPI_E2E_SERVICE must be thermal, ucsi, battery, or rtc)
+endif
 endif
 endif
 endif

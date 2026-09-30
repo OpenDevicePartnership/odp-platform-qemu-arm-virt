@@ -80,7 +80,7 @@ failed=0
 pinned_base=
 pinned_image_sha256=
 pin_error=
-for service in thermal ucsi battery; do
+for service in thermal ucsi battery rtc; do
     while :; do
         run_id="${suite_id#suite-}-${service:0:1}-$RANDOM"
         run_dir="$cache/runs/$run_id"

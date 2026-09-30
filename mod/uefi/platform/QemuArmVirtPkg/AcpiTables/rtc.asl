@@ -237,6 +237,10 @@ Device(RTC)
             Return (0xFFFFFFFF) // Communication failure
         }
 
+        CreateDWordField(CBUF, FFA_PAYLOAD_START_INDEX_BYTES, SRTS)
+        If (SRTS != Zero) {
+            Return (0xFFFFFFFF)
+        }
         Return (Zero)
     }
 
@@ -267,7 +271,10 @@ Device(RTC)
     //
     Method (_CWS, 1, Serialized)
     {
-        Return(EC_1(0x5, One, Arg0))
+        If (EC_1(0x5, One, Arg0) != Zero) {
+            Return (One)
+        }
+        Return (Zero)
     }
 
     //
@@ -280,7 +287,10 @@ Device(RTC)
     //
     Method (_STV, 2, NotSerialized)
     {
-        Return(EC_2(0x6, One, Arg0, Arg1))
+        If (EC_2(0x6, One, Arg0, Arg1) != Zero) {
+            Return (One)
+        }
+        Return (Zero)
     }
 
     //
@@ -311,7 +321,10 @@ Device(RTC)
     //
     Method (_STP, 2, NotSerialized)
     {
-        Return(EC_2(0x8, One, Arg0, Arg1))
+        If (EC_2(0x8, One, Arg0, Arg1) != Zero) {
+            Return (One)
+        }
+        Return (Zero)
     }
 
     //
