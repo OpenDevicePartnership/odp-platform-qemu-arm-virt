@@ -142,12 +142,13 @@ cleanup() {
     true
 }
 trap cleanup EXIT
+trap 'exit 1' INT TERM
 
 mkdir -p "$BUILD_DIR"
-rm -f "$EC_OUT_LOG" "$EC_ERR_LOG" "$EC_SERIAL_LOG"
+: > "$EC_OUT_LOG" && : > "$EC_ERR_LOG" && : > "$EC_SERIAL_LOG" || exit 1
 
 # 1. EC QEMU sidecar + PTY discovery (swtpm is owned by the helper now).
-start_ec_qemu "$EC_ELF" "$EC_OUT_LOG" "$EC_ERR_LOG" "$EC_SERIAL_LOG" "$EC_TIMEOUT"
+start_ec_qemu "$EC_ELF" "$EC_OUT_LOG" "$EC_ERR_LOG" "$EC_SERIAL_LOG" "$EC_TIMEOUT" || exit 1
 PTY=$(discover_ec_pty "$EC_OUT_LOG" "$EC_ERR_LOG") || exit 1
 echo "EC PTY: $PTY — launching host QEMU via run_host_efi_and_parse_results"
 

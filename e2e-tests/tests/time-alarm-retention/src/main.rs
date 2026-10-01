@@ -8,6 +8,7 @@
 mod evidence;
 mod gpio_irq;
 mod platform;
+mod power_input;
 mod protocol;
 
 use platform::{counter, frequency, Fixture};
@@ -26,6 +27,7 @@ const ALARM_SECONDS: u32 = 5;
 enum Mode {
     Probe,
     Wake { source: u32, connected: bool },
+    PowerInput(u32),
 }
 
 #[entry]
@@ -57,6 +59,13 @@ fn arguments() -> TestResult<Mode> {
         params.args_len() == 3,
         "expected source and wire arguments, or probe",
     )?;
+    if selected == Some(cstr16!("power-input")) {
+        return match args.next() {
+            Some(value) if value == cstr16!("ac") => Ok(Mode::PowerInput(0)),
+            Some(value) if value == cstr16!("dc") => Ok(Mode::PowerInput(1)),
+            _ => Err("power-input requires an explicit ac or dc startup source"),
+        };
+    }
     let source = if selected == Some(cstr16!("ac")) {
         0
     } else if selected == Some(cstr16!("dc")) {
@@ -161,11 +170,15 @@ fn attempt(
 }
 
 fn run(ctx: &mut E2eContext) -> TestResult {
-    let Mode::Wake { source, connected } = arguments()? else {
-        log::info!("RETENTION PROBE ONLY: no EC commands, ISR registration, or CPU standby");
-        Fixture::probe()?;
-        log::info!("RETENTION PROBE READY: read-only checks; not wake acceptance");
-        return Ok(());
+    let (source, connected, power_input) = match arguments()? {
+        Mode::Probe => {
+            log::info!("RETENTION PROBE ONLY: no EC commands, ISR registration, or CPU standby");
+            Fixture::probe()?;
+            log::info!("RETENTION PROBE READY: read-only checks; not wake acceptance");
+            return Ok(());
+        }
+        Mode::Wake { source, connected } => (source, connected, false),
+        Mode::PowerInput(source) => (source, true, true),
     };
     log::info!(
         "RETENTION fixture={} wire={}",
@@ -178,7 +191,9 @@ fn run(ctx: &mut E2eContext) -> TestResult {
     );
     let mut fixture = Fixture::new()?;
     let outcome = (|| {
-        if connected {
+        if power_input {
+            power_input::run(ctx, &mut fixture, source)?;
+        } else if connected {
             attempt(ctx, &mut fixture, 1 - source, false, false)?;
             ctx.pass("retention_inactive_alarm_guard");
             attempt(ctx, &mut fixture, source, true, true)?;

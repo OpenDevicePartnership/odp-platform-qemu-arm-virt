@@ -238,6 +238,20 @@ retention-run: retention-options retention-build retention-ec $(COVERAGE_PLUGIN)
 		e2e-tests/$(TARGET_DIR)/time_alarm_retention.efi e2e-tests/$(COVERAGE_PLUGIN) \
 		$(QEMU_TIMEOUT) $(SERIAL_TEE) -- $(QEMU_COMMON_ARGS)
 
+.PHONY: retention-power-input retention-power-input-ec
+retention-power-input-ec: retention-options builder-image
+	@$(DC_RUN) -w mod/ec/platform/dev-qemu -- cargo build --release --locked \
+		--features time-alarm-power-input \
+		--target-dir $(REPO_ROOT_IN_DEVCONTAINER)/e2e-tests/Build/retention-ec-power-input
+
+retention-power-input: retention-options retention-build retention-power-input-ec $(COVERAGE_PLUGIN)
+	@$(DC_RUN) -- env EC_QEMU="$(RETENTION_EC_QEMU)" bash scripts/test-time-alarm-retention.sh \
+		$(TIME_ALARM_SOURCE) power-input \
+		e2e-tests/Build/retention-ec-power-input/riscv32imac-unknown-none-elf/release/dev-qemu \
+		$(BIOS_FV_DIR) e2e-tests/Build/retention \
+		e2e-tests/$(TARGET_DIR)/time_alarm_retention.efi e2e-tests/$(COVERAGE_PLUGIN) \
+		$(QEMU_TIMEOUT) $(SERIAL_TEE) -- $(QEMU_COMMON_ARGS)
+
 # ------------------------------------------------------------
 # Generate coverage report from collected PCs
 # ------------------------------------------------------------

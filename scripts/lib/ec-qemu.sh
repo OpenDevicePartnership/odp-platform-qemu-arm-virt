@@ -51,13 +51,29 @@ start_ec_qemu() {
         gpio_args=(-chardev "socket,id=ec-gpio1,path=$EC_WAKE_SOCK,server=on,wait=off")
         rm -f "$EC_WAKE_SOCK"
     fi
+    if [ -n "${EC_POWER_SOCK:-}" ]; then
+        local reset
+        case "${EC_POWER_SOURCE:-}" in
+            ac) reset=4 ;;
+            dc) reset=0 ;;
+            *) echo "ERROR: EC_POWER_SOURCE must be ac or dc with EC_POWER_SOCK" >&2; return 1 ;;
+        esac
+        gpio_args+=(
+            -global odp-gpio.input-reset-mask=4
+            -global "odp-gpio.input-reset=$reset"
+            -chardev "socket,id=ec-gpio2,path=$EC_POWER_SOCK,server=off"
+        )
+    fi
     # Stale sockets from a previous run would make `server=on` fail to bind.
     rm -f "$i2c_sock" "$gpio_sock"
-    # Log files are pre-cleared by the orchestrator (`rm -f`); shell redirection
-    # below creates them fresh. No truncation needed here.
+    # Keep log inodes stable for live source-control observation.
     setsid bash -o pipefail -c '
         elf=$1; out_log=$2; err_log=$3; timeout_s=$4
         i2c_sock=$5; gpio_sock=$6; qemu=$7; shift 7
+        decoder_args=()
+        if [ -n "${EC_POWER_SOCK:-}" ]; then
+            decoder_args=(--log-format "{s}")
+        fi
         timeout "$timeout_s" "$qemu" \
         -machine ec \
         -bios none \
@@ -71,7 +87,7 @@ start_ec_qemu() {
         -chardev "socket,id=ec-gpio0,path=$gpio_sock,server=on,wait=off" \
         "$@" 2> "$err_log" \
         | stdbuf -oL tee "$out_log" \
-        | stdbuf -oL defmt-print -e "$elf"
+        | stdbuf -oL defmt-print -e "$elf" "${decoder_args[@]}"
         ' bash "$elf" "$out_log" "$err_log" "$timeout_s" \
         "$i2c_sock" "$gpio_sock" "$qemu" "${gpio_args[@]}" \
         >"$serial_log" 2>&1 &

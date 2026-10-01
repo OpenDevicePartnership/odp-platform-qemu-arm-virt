@@ -27,6 +27,8 @@ class RetentionRunnerTests(unittest.TestCase):
         self.record = self.root / "record.json"
         self.env = dict(os.environ, RECORD=str(self.record))
         self.env.pop("EC_QEMU", None)
+        self.env.pop("EC_POWER_SOCK", None)
+        self.env.pop("EC_POWER_SOURCE", None)
         self.elf = self.root / "fixture ' quoted.elf"
         self.elf.touch()
         self.bios = self.root / "bios"
@@ -91,6 +93,20 @@ pathlib.Path(os.environ['RECORD']).write_text(json.dumps(sys.argv))
         self.assertIn(str(self.elf), args)
         self.assertIn(f"socket,id=ec-gpio0,path={self.root / 'hid'},server=on,wait=off", args)
         self.assertFalse(any("id=ec-gpio1," in arg for arg in args))
+        self.assertFalse(any("id=ec-gpio2," in arg for arg in args))
+        for source, reset in [("ac", "4"), ("dc", "0")]:
+            with self.subTest(source=source):
+                self.env.update(EC_POWER_SOCK=str(self.root / "power"), EC_POWER_SOURCE=source)
+                result = subprocess.run(
+                    ["bash", "-c", 'source "$EC_LIBRARY"; start_ec_qemu "$EC_ELF" '
+                     '"$LOG_ROOT/out" "$LOG_ROOT/err" "$LOG_ROOT/serial" 5; wait "$EC_PID"'],
+                    env=self.env, capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                args = json.loads(self.record.read_text())
+                self.assertIn("odp-gpio.input-reset-mask=4", args)
+                self.assertIn(f"odp-gpio.input-reset={reset}", args)
+                self.assertIn(f"socket,id=ec-gpio2,path={self.root / 'power'},server=off", args)
 
     def test_probe_is_not_wake_acceptance(self):
         log = self.root / "probe.log"
