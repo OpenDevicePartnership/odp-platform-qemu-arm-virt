@@ -151,6 +151,86 @@ make -C e2e-tests test-sp-services
 make e2e-test
 ```
 
+### TimeAlarm CPU-retention fixture
+
+`time_alarm_retention.efi` tests **firmware CPU standby, not Windows sleep or
+system suspend**. It is opt-in, outside `make e2e-test`.
+
+Prerequisites: wake-capable EC/library, QEMU GPIO1 support, and Patina PL061
+MMIO resources. Build UEFI with the **normal relay SP**, not
+`secure-services-test`. The runner does not update submodules, dependency pins,
+QEMU binaries, or the devcontainer.
+
+```bash
+# Compile only; does not build EC/UEFI or start QEMU.
+make -C e2e-tests retention-build
+
+# Read-only host readiness check: no EC sidecar or CPU standby.
+make -C e2e-tests retention-probe SERIAL_TEE=1
+
+# After adopting/building all prerequisites:
+make -C e2e-tests retention-run TIME_ALARM_SOURCE=ac
+make -C e2e-tests retention-run TIME_ALARM_SOURCE=dc
+make -C e2e-tests retention-run TIME_ALARM_SOURCE=ac TIME_ALARM_WIRE=disconnected
+make -C e2e-tests retention-run TIME_ALARM_SOURCE=dc TIME_ALARM_WIRE=disconnected
+```
+
+`retention-probe` needs only PL061-mapped host firmware and host QEMU. Its
+read-only FF-A/EL/GIC/PL061/HardwareInterrupt2 checks do not claim INTID 39.
+Three passes plus `RETENTION PROBE READY` are **not wake acceptance**.
+Probe log: `e2e-tests/Build/retention-probe/test-output.log`.
+
+Mandatory `TIME_ALARM_SOURCE=ac|dc` selects separate EC build directories with
+`time-alarm-wake` and build-time `ODP_WAKE_SOURCE`; there is no source fallback.
+This is test-only selection, not power-source detection; both timers start off.
+
+For an isolated EC QEMU, pass
+`RETENTION_EC_QEMU=/path/to/install/bin/qemu-system-riscv32` to `retention-run`.
+The whole install prefix must exist inside the devcontainer; do not replace
+host QEMU via `PATH`. CI should use a published, pinned builder image.
+
+Runs keep logs/vdrives in `e2e-tests/Build/retention/` and private sockets in
+`/tmp/odp-retention.*`. Disconnected mode omits only the host GPIO1 connection:
+the EC still asserts its wake output; GPIO0/HID, I2C and UART/SP relay remain.
+Connected acceptance requires an inactive-timer guard, selected-timer wake and
+clear/rearm repeat (six passes); disconnected requires the EC wake latch but
+only a host guard return (four passes). Clear/disable must acknowledge GPIO1
+low before PL061/GIC pending state is cleared.
+
+Pinned TF-A (`842ce6391`, `plat/qemu/common/qemu_pm.c`) implements state `1`
+as `DSB; WFI`; the app calls `CPU_SUSPEND64(1, 0, 0)` once per attempt.
+IRQ dispatch stays masked through return-cause capture. Wake requires INTID 39,
+pin 1 high, only PL061 bit 1 pending, actual GPIO1 ISR/EOI and at least one
+second of residency before the guard. Negative cases require CNTV/PPI 27,
+guard status, no GPIO1 wake and 9–11 seconds of residency. HID or unexpected/
+secure-world wakes cannot pass; the app does not poll back into standby.
+
+Requires the boot CPU, GICv3 affinity routing and no enabled LPIs.
+Patina 22.1's broken SPI state/trigger getters require direct GICD snapshots
+and readback; HardwareInterrupt2 still owns INTID 39 registration/EOI, with no
+success fallback on protocol errors. Other IRQ sources are isolated. IRQ/device
+state and TimerDxe period/callback are restored even on rejection; SGI/PPI/SPI
+enables must match the raw snapshot before dispatch resumes. Failure to
+unregister the ISR is logged and shuts down rather than leaving dangling code.
+
+Five-second EC alarms must have 3–5 seconds remaining at the last query;
+query-through-entry must take under one host second, with at least nine guard
+seconds left. Excessive two-QEMU clock drift or relay latency fails.
+`QEMU_TIMEOUT` is only a failure backstop, never wake evidence.
+
+Host-only checks, without firmware execution:
+
+```bash
+python3 scripts/tests/test_time_alarm_retention.py
+cd e2e-tests
+test_binary=$(mktemp /tmp/retention-evidence.XXXXXX)
+for suite in evidence gpio_irq; do
+  rustc --test "tests/time-alarm-retention/src/$suite.rs" -o "$test_binary"
+  "$test_binary"
+done
+rm "$test_binary"
+```
+
 ### Adjusting the Timeout
 
 The default QEMU timeout is 180 seconds. Override with:

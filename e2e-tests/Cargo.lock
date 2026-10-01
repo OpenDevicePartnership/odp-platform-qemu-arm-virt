@@ -178,6 +178,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "time_alarm_retention"
+version = "0.1.0"
+dependencies = [
+ "ffa",
+ "log",
+ "test-support",
+ "uefi",
+]
+
+[[package]]
 name = "tpm"
 version = "0.1.0"
 dependencies = [
