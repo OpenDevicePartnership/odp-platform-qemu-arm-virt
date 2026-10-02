@@ -166,17 +166,6 @@ impl Fixture {
         Ok(fixture)
     }
 
-    pub fn probe() -> TestResult {
-        let fixture = Self::inspect()?;
-        log::info!(
-            "RETENTION PL061 data={:#x} raw={:#x} mask={:#x}",
-            read(GPIO + 0x3fc),
-            read(GPIO + 0x414),
-            fixture.gpio[4]
-        );
-        Ok(())
-    }
-
     fn inspect() -> TestResult<Self> {
         let current_el = register!("CurrentEL");
         log::info!("RETENTION CurrentEL={}", current_el >> 2);

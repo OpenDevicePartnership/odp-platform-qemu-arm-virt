@@ -208,22 +208,13 @@ RETENTION_EC_QEMU ?= qemu-system-riscv32
 RETENTION_EC_TARGET := e2e-tests/Build/retention-ec-$(TIME_ALARM_SOURCE)
 RETENTION_EC_ELF := $(RETENTION_EC_TARGET)/riscv32imac-unknown-none-elf/release/dev-qemu
 
-.PHONY: retention-options retention-build retention-probe retention-ec retention-run
+.PHONY: retention-options retention-build retention-ec retention-run
 retention-options:
 	@case "$(TIME_ALARM_SOURCE)" in ac|dc) ;; *) echo "ERROR: TIME_ALARM_SOURCE must be ac or dc" >&2; exit 2 ;; esac
 	@case "$(TIME_ALARM_WIRE)" in connected|disconnected) ;; *) echo "ERROR: TIME_ALARM_WIRE must be connected or disconnected" >&2; exit 2 ;; esac
 
 retention-build: builder-image
 	@$(DC_RUN) -w e2e-tests -- cargo build --release --locked -p time_alarm_retention
-
-retention-probe: retention-build $(COVERAGE_PLUGIN)
-	$(call make-vdrive,Build/retention-probe/vdrive,$(TARGET_DIR)/time_alarm_retention.efi)
-	sed 's/^    %a$$/    %a probe/' $(STARTUP_NSH) > Build/retention-probe/vdrive/startup.nsh
-	@$(DC_RUN) -- scripts/test-sp-services.sh \
-		$(BIOS_FV_DIR) e2e-tests/Build/retention-probe e2e-tests/Build/retention-probe/vdrive \
-		e2e-tests/$(COVERAGE_PLUGIN) e2e-tests/Build/retention-probe/coverage.log \
-		$(QEMU_TIMEOUT) $(SERIAL_TEE) 3 -- $(QEMU_COMMON_ARGS)
-	@grep -Fq 'RETENTION PROBE READY: read-only checks; not wake acceptance' Build/retention-probe/test-output.log
 
 retention-ec: retention-options builder-image
 	@$(DC_RUN) -w mod/ec/platform/dev-qemu -- \
