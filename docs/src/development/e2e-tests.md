@@ -151,6 +151,139 @@ make -C e2e-tests test-sp-services
 make e2e-test
 ```
 
+### TimeAlarm CPU-retention fixture
+
+`time_alarm_retention.efi` tests **firmware CPU standby, not Windows sleep or
+system suspend**. It is opt-in, outside `make e2e-test`.
+
+Prerequisites: wake-capable EC/library, QEMU GPIO1 support, and Patina PL061
+MMIO resources. Build UEFI with the **normal relay SP**, not
+`secure-services-test`. The runner does not update submodules, dependency pins,
+QEMU binaries, or the devcontainer.
+
+```bash
+# Compile only; does not build EC/UEFI or start QEMU.
+make -C e2e-tests retention-build
+
+# After adopting/building all prerequisites:
+make -C e2e-tests retention-run TIME_ALARM_SOURCE=ac
+make -C e2e-tests retention-run TIME_ALARM_SOURCE=dc
+make -C e2e-tests retention-run TIME_ALARM_SOURCE=ac TIME_ALARM_WIRE=disconnected
+make -C e2e-tests retention-run TIME_ALARM_SOURCE=dc TIME_ALARM_WIRE=disconnected
+```
+
+Mandatory `TIME_ALARM_SOURCE=ac|dc` selects separate EC build directories with
+`time-alarm-wake` and build-time `ODP_WAKE_SOURCE`; there is no source fallback.
+This is test-only selection, not power-source detection; both timers start off.
+
+For an isolated EC QEMU, pass
+`RETENTION_EC_QEMU=/path/to/install/bin/qemu-system-riscv32` to `retention-run`.
+The whole install prefix must exist inside the devcontainer; do not replace
+host QEMU via `PATH`. CI should use a published, pinned builder image.
+
+Runs keep logs/vdrives in `e2e-tests/Build/retention/` and private sockets in
+`/tmp/odp-retention.*`. Disconnected mode omits only the host GPIO1 connection:
+the EC still asserts its wake output; GPIO0/HID, I2C and UART/SP relay remain.
+Connected acceptance requires an inactive-timer guard, selected-timer wake and
+clear/rearm repeat (six passes); disconnected requires the EC wake latch but
+only a host guard return (four passes). Clear/disable must acknowledge GPIO1
+low before PL061/GIC pending state is cleared.
+
+Pinned TF-A (`842ce6391`, `plat/qemu/common/qemu_pm.c`) implements state `1`
+as `DSB; WFI`; the app calls `CPU_SUSPEND64(1, 0, 0)` once per attempt.
+IRQ dispatch stays masked through return-cause capture. Wake requires INTID 39,
+pin 1 high, only PL061 bit 1 pending, actual GPIO1 ISR/EOI and at least one
+second of residency before the guard. Negative cases require CNTV/PPI 27,
+guard status, no GPIO1 wake and 9–11 seconds of residency. HID or unexpected/
+secure-world wakes cannot pass; the app does not poll back into standby.
+
+Requires the boot CPU, GICv3 affinity routing and no enabled LPIs.
+Patina 22.1's broken SPI state/trigger getters require direct GICD snapshots
+and readback; HardwareInterrupt2 still owns INTID 39 registration/EOI, with no
+success fallback on protocol errors. Other IRQ sources are isolated. IRQ/device
+state and TimerDxe period/callback are restored even on rejection; SGI/PPI/SPI
+enables must match the raw snapshot before dispatch resumes. Failure to
+unregister the ISR is logged and shuts down rather than leaving dangling code.
+
+Five-second EC alarms must have 3–5 seconds remaining at the last query;
+query-through-entry must take under one host second, with at least nine guard
+seconds left. Excessive two-QEMU clock drift or relay latency fails.
+`QEMU_TIMEOUT` is only a failure backstop, never wake evidence.
+
+Host-only checks, without firmware execution:
+
+```bash
+python3 scripts/tests/test_time_alarm_retention.py
+cd e2e-tests
+test_binary=$(mktemp /tmp/retention-evidence.XXXXXX)
+for suite in evidence gpio_irq; do
+  rustc --test "tests/time-alarm-retention/src/$suite.rs" -o "$test_binary"
+  "$test_binary"
+done
+rm "$test_binary"
+```
+
+### Emulated runtime power-input command-path test
+
+`retention-power-input` reuses the same EFI and normal FF-A/SP/EC commands.
+It needs the GPIO2 model and EC `time-alarm-power-input` feature. It builds
+one runtime-input EC artifact, without `ODP_WAKE_SOURCE`; `TIME_ALARM_SOURCE`
+selects the model's explicit cold-start seed, not a compile-time fallback.
+
+```bash
+make -C e2e-tests retention-power-input TIME_ALARM_SOURCE=ac \
+  RETENTION_EC_QEMU=/path/to/gpio2-enabled/qemu-system-riscv32
+make -C e2e-tests retention-power-input TIME_ALARM_SOURCE=dc \
+  RETENTION_EC_QEMU=/path/to/gpio2-enabled/qemu-system-riscv32
+```
+
+The runner supplies `odp-gpio.input-reset-mask=4` and `input-reset=4` (AC)
+or `0` (DC) before EC boot. The EC checks the model's input-validity register.
+Its separate `ec-gpio2` connection receives only raw `01`/`00` from the source
+helper, and nothing on initial connection. **Host PL061 GPIO2 is not connected**:
+its reset pull-down must not overwrite the explicit EC seed. GPIO1 remains
+exclusively driven by the EC's real wake consumer; GPIO0/HID is unchanged.
+
+Five numbered `TA_SOURCE` requests select seed, other, seed, other, seed.
+The helper frames each fresh per-run log independently and preserves its
+origin; raw host/EC bytes are never merged. After a source
+write it waits for the EC's corresponding `TimeAlarm power input: ...` record,
+which follows `set_power_source()`, before acknowledging the sequence through
+the existing USB keyboard via a private host QMP socket. UEFI waits on normal
+console/timer events with a ten-second bound. These keys are control-plane
+acknowledgments while UEFI is awake, **never wake evidence**. There are no
+source-settling sleeps; the EC decoder emits message-only live records and
+the helper follows regular log files without putting a pipe behind host UART.
+Before each GPIO2 write it snapshots the EC log's byte position: an older
+record, including a partial record completed later, cannot acknowledge that
+write. The controller drains both log streams through EOF before accepting
+completion and records the origin/offset of every control record.
+
+Each cold-start run must report six passes (three FF-A setup plus three cases):
+
+| Case | Evidence |
+| --- | --- |
+| Startup source | Existing selected-timer test: real retention return, INTID39, GPIO1 and ISR evidence |
+| INSTANTLY | Switch away; expire that source's five-second timer with only the ten-second guard; switch back; bounded real GetWakeStatus reads observe status `3` and physical GPIO1 high; clear returns low |
+| NEVER | Same inactive expiry with NEVER; after confirmed source return, another full guard window retains status `1` and GPIO1 low |
+
+The source transitions themselves are **awake command-path qualification**,
+not proof of transition-time CPU resume or Windows sleep/resume. Normal
+clear/disable commands and the existing IRQ restoration run on failure too.
+The helper must additionally report all five applied/acknowledged stages;
+a stale six-pass retention run is insufficient. Source-control errors propagate
+and terminate the owned runner. Logs include `source-controller.log` alongside
+the usual host/EC logs in `e2e-tests/Build/retention/<source>-power-input.*`.
+Disconnect/EC-reset hold semantics are covered by the model/component tests,
+not by this target.
+
+Host-only checks (local socket/log fixtures, no VM):
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/tests/test_retention_power_input.py
+python3 scripts/tests/test_time_alarm_retention.py
+```
+
 ### Adjusting the Timeout
 
 The default QEMU timeout is 180 seconds. Override with:
