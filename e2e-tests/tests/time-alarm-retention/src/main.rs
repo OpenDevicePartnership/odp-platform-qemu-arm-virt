@@ -24,7 +24,6 @@ const SET_POLICY: u8 = 8;
 const ALARM_SECONDS: u32 = 5;
 
 enum Mode {
-    Probe,
     Wake { source: u32, connected: bool },
 }
 
@@ -50,13 +49,7 @@ fn arguments() -> TestResult<Mode> {
         .map_err(|_| "shell parameters unavailable")?;
     let mut args = params.args().skip(1);
     let selected = args.next();
-    if params.args_len() == 2 && selected == Some(cstr16!("probe")) {
-        return Ok(Mode::Probe);
-    }
-    require(
-        params.args_len() == 3,
-        "expected source and wire arguments, or probe",
-    )?;
+    require(params.args_len() == 3, "expected source and wire arguments")?;
     let source = if selected == Some(cstr16!("ac")) {
         0
     } else if selected == Some(cstr16!("dc")) {
@@ -161,12 +154,7 @@ fn attempt(
 }
 
 fn run(ctx: &mut E2eContext) -> TestResult {
-    let Mode::Wake { source, connected } = arguments()? else {
-        log::info!("RETENTION PROBE ONLY: no EC commands, ISR registration, or CPU standby");
-        Fixture::probe()?;
-        log::info!("RETENTION PROBE READY: read-only checks; not wake acceptance");
-        return Ok(());
-    };
+    let Mode::Wake { source, connected } = arguments()?;
     log::info!(
         "RETENTION fixture={} wire={}",
         if source == 0 { "ac" } else { "dc" },

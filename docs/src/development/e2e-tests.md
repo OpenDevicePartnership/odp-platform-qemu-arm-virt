@@ -165,20 +165,12 @@ QEMU binaries, or the devcontainer.
 # Compile only; does not build EC/UEFI or start QEMU.
 make -C e2e-tests retention-build
 
-# Read-only host readiness check: no EC sidecar or CPU standby.
-make -C e2e-tests retention-probe SERIAL_TEE=1
-
 # After adopting/building all prerequisites:
 make -C e2e-tests retention-run TIME_ALARM_SOURCE=ac
 make -C e2e-tests retention-run TIME_ALARM_SOURCE=dc
 make -C e2e-tests retention-run TIME_ALARM_SOURCE=ac TIME_ALARM_WIRE=disconnected
 make -C e2e-tests retention-run TIME_ALARM_SOURCE=dc TIME_ALARM_WIRE=disconnected
 ```
-
-`retention-probe` needs only PL061-mapped host firmware and host QEMU. Its
-read-only FF-A/EL/GIC/PL061/HardwareInterrupt2 checks do not claim INTID 39.
-Three passes plus `RETENTION PROBE READY` are **not wake acceptance**.
-Probe log: `e2e-tests/Build/retention-probe/test-output.log`.
 
 Mandatory `TIME_ALARM_SOURCE=ac|dc` selects separate EC build directories with
 `time-alarm-wake` and build-time `ODP_WAKE_SOURCE`; there is no source fallback.
