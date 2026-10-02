@@ -108,10 +108,9 @@ pathlib.Path(os.environ['RECORD']).write_text(json.dumps(sys.argv))
                 self.assertIn(f"odp-gpio.input-reset={reset}", args)
                 self.assertIn(f"socket,id=ec-gpio2,path={self.root / 'power'},server=off", args)
 
-    def test_probe_is_not_wake_acceptance(self):
-        log = self.root / "probe.log"
+    def test_incomplete_run_is_not_wake_acceptance(self):
+        log = self.root / "incomplete.log"
         log.write_text("=== EC Secure Partition E2E Tests ===\n"
-                       "RETENTION PROBE READY: read-only checks; not wake acceptance\n"
                        "--- Results: 3 passed, 0 failed ---\n")
         for count in [3, 4, 6]:
             with self.subTest(expected=count):
