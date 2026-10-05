@@ -3,8 +3,8 @@
 #
 # SPDX-License-Identifier: MIT
 #
-# Required on PATH: qemu-system-riscv32 (or EC_QEMU), defmt-print, stdbuf, tee, setsid,
-# timeout, ps, tail
+# Required executables: qemu-system-riscv32 (or an EC_QEMU executable path),
+# plus defmt-print, stdbuf, tee, setsid, timeout, ps, tail on PATH.
 #
 # Functions intentionally assign EC_PID in the *caller's* shell scope
 # (no `local`) so the orchestrator's cleanup trap can reach the EC's
@@ -14,10 +14,10 @@
 # library does not modify them.
 
 # require_ec_qemu_tools
-#   Verifies the external tools this library needs are on PATH.
+#   Verifies the selected QEMU executable and helper tools are available.
 require_ec_qemu_tools() {
     local cmd missing=()
-    for cmd in "${EC_QEMU-qemu-system-riscv32}" defmt-print stdbuf tee setsid timeout ps tail; do
+    for cmd in "${EC_QEMU:-qemu-system-riscv32}" defmt-print stdbuf tee setsid timeout ps tail; do
         command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
     done
     [ "${#missing[@]}" -eq 0 ] ||
@@ -45,7 +45,7 @@ start_ec_qemu() {
     local elf="$1" out_log="$2" err_log="$3" serial_log="$4" timeout_s="$5"
     local i2c_sock="${EC_I2C_SOCK:-/tmp/qemu-ec-i2c.sock}"
     local gpio_sock="${EC_GPIO_SOCK:-/tmp/qemu-ec-gpio.sock}"
-    local qemu="${EC_QEMU-qemu-system-riscv32}"
+    local qemu="${EC_QEMU:-qemu-system-riscv32}"
     local gpio_args=()
     if [ -n "${EC_WAKE_SOCK:-}" ]; then
         gpio_args=(-chardev "socket,id=ec-gpio1,path=$EC_WAKE_SOCK,server=on,wait=off")
