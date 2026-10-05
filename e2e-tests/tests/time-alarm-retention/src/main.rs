@@ -5,11 +5,9 @@
 #![no_main]
 #![no_std]
 
-mod evidence;
-mod gpio_irq;
+mod interrupt;
 mod platform;
 mod power_input;
-mod protocol;
 
 use platform::{counter, frequency, Fixture};
 use test_support::{run_tests, E2eContext, TIME_ALARM_UUID};
@@ -62,20 +60,15 @@ fn arguments() -> TestResult<Mode> {
             _ => Err("power-input requires an explicit ac or dc startup source"),
         };
     }
-    let source = if selected == Some(cstr16!("ac")) {
-        0
-    } else if selected == Some(cstr16!("dc")) {
-        1
-    } else {
-        return Err("source must be explicitly ac or dc");
+    let source = match selected {
+        Some(arg) if arg == cstr16!("ac") => 0,
+        Some(arg) if arg == cstr16!("dc") => 1,
+        _ => return Err("source must be explicitly ac or dc"),
     };
-    let wire = args.next();
-    let connected = if wire == Some(cstr16!("connected")) {
-        true
-    } else if wire == Some(cstr16!("disconnected")) {
-        false
-    } else {
-        return Err("wire must be connected or disconnected");
+    let connected = match args.next() {
+        Some(arg) if arg == cstr16!("connected") => true,
+        Some(arg) if arg == cstr16!("disconnected") => false,
+        _ => return Err("wire must be connected or disconnected"),
     };
     Ok(Mode::Wake { source, connected })
 }
@@ -170,17 +163,17 @@ fn run(ctx: &mut E2eContext) -> TestResult {
         Mode::Wake { source, connected } => (source, connected, false),
         Mode::PowerInput(source) => (source, true, true),
     };
+    let wire = if connected {
+        "connected"
+    } else {
+        "disconnected"
+    };
     log::info!(
-        "RETENTION fixture={} wire={}",
+        "RETENTION fixture={} wire={wire}",
         if source == 0 { "ac" } else { "dc" },
-        if connected {
-            "connected"
-        } else {
-            "disconnected"
-        }
     );
     let mut fixture = Fixture::new()?;
-    let outcome = (|| {
+    let mut outcome = (|| {
         if power_input {
             power_input::run(ctx, &mut fixture, source)?;
         } else if connected {
@@ -196,13 +189,11 @@ fn run(ctx: &mut E2eContext) -> TestResult {
         }
         Ok(())
     })();
-    let disarmed = disarm(ctx);
-    let acknowledged = acknowledge(ctx, &fixture);
-    let restored = fixture.restore();
-    for result in [disarmed, acknowledged, restored] {
+    for result in [disarm(ctx), acknowledge(ctx, &fixture), fixture.restore()] {
         if let Err(reason) = result {
             log::error!("Retention cleanup: {reason}");
         }
+        outcome = outcome.and(result);
     }
-    outcome.and(disarmed).and(acknowledged).and(restored)
+    outcome
 }
