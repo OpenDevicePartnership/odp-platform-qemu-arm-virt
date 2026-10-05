@@ -7,15 +7,17 @@ use core::{
     sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering},
 };
 use uefi::{
-    boot::ScopedProtocol,
+    boot::{self, OpenProtocolAttributes, OpenProtocolParams, ScopedProtocol},
+    proto::unsafe_protocol,
     runtime::{self, ResetType},
     Status,
 };
 
 use crate::{
-    evidence::Observation,
-    gpio_irq::{self, BIT as IRQ_BIT, IRQ},
-    protocol::{self, HardwareInterrupt},
+    interrupt::{
+        with_configuration, Observation, CONFIG_MASK, CONFIG_OFFSET, ENABLE_OFFSET, IRQ, IRQ_BIT,
+        PIN,
+    },
     require, TestResult,
 };
 
@@ -23,10 +25,32 @@ const GPIO: usize = 0x0903_0000;
 const GICD: usize = 0x0800_0000;
 const GICR: usize = 0x080a_0000;
 const SGI: usize = GICR + 0x10000;
-const PIN: u32 = 2;
 const GUARD: u32 = 1 << 27;
 const CPU_SUSPEND64: u64 = 0xc400_0001;
-const GPIO_REGISTERS: [usize; 6] = [0x400, 0x404, 0x408, 0x40c, 0x410, 0x420];
+const GPIO_REGISTERS: [usize; 6] = [0x400, 0x404, 0x408, 0x40c, 0x420, 0x410];
+
+type Handler = unsafe extern "efiapi" fn(usize, *mut c_void);
+type SourceOperation = unsafe extern "efiapi" fn(*mut HardwareInterrupt, usize) -> Status;
+
+// Public HardwareInterrupt2 ABI; Patina's private trailing fields are not ours.
+#[repr(C)]
+#[unsafe_protocol("32898322-2da1-474a-baaa-f3f7cf569470")]
+struct HardwareInterrupt {
+    register: unsafe extern "efiapi" fn(*mut Self, usize, Option<Handler>) -> Status,
+    enable: SourceOperation,
+    disable: SourceOperation,
+    state: unsafe extern "efiapi" fn(*mut Self, usize, *mut bool) -> Status,
+    eoi: SourceOperation,
+    get_trigger: unsafe extern "efiapi" fn(*mut Self, usize, *mut u32) -> Status,
+    set_trigger: unsafe extern "efiapi" fn(*mut Self, usize, u32) -> Status,
+}
+
+fn check(status: Status, operation: &'static str) -> TestResult {
+    if status != Status::SUCCESS {
+        log::error!("{operation}: {status:?}");
+    }
+    require(status == Status::SUCCESS, operation)
+}
 
 static PROTOCOL: AtomicPtr<HardwareInterrupt> = AtomicPtr::new(ptr::null_mut());
 static ISR_PIN: AtomicU32 = AtomicU32::new(0);
@@ -110,7 +134,7 @@ fn synchronize_gic() -> TestResult {
 }
 
 fn gpio_irq_enabled() -> bool {
-    gpio_irq::enabled(read(GICD + gpio_irq::ENABLE_OFFSET))
+    read(GICD + ENABLE_OFFSET) & IRQ_BIT != 0
 }
 
 fn set_gpio_irq_configuration(configuration: u32) -> TestResult {
@@ -118,8 +142,8 @@ fn set_gpio_irq_configuration(configuration: u32) -> TestResult {
         !gpio_irq_enabled(),
         "GPIO IRQ must be disabled before changing its trigger",
     )?;
-    let address = GICD + gpio_irq::CONFIG_OFFSET;
-    let expected = gpio_irq::with_configuration(read(address), configuration);
+    let address = GICD + CONFIG_OFFSET;
+    let expected = with_configuration(read(address), configuration);
     write(address, expected);
     synchronize_gic()?;
     let actual = read(address);
@@ -145,8 +169,7 @@ unsafe extern "efiapi" fn gpio_interrupt(source: usize, _: *mut c_void) {
 }
 
 pub struct Fixture {
-    _protocol: ScopedProtocol<HardwareInterrupt>,
-    interface: *mut HardwareInterrupt,
+    protocol: ScopedProtocol<HardwareInterrupt>,
     gpio: [u32; 6],
     irq_configuration: u32,
     words: usize,
@@ -156,17 +179,6 @@ pub struct Fixture {
 
 impl Fixture {
     pub fn new() -> TestResult<Self> {
-        let mut fixture = Self::inspect()?;
-        fixture.restored = false;
-        let configured = fixture.configure();
-        if let Err(reason) = configured {
-            fixture.restore()?;
-            return Err(reason);
-        }
-        Ok(fixture)
-    }
-
-    fn inspect() -> TestResult<Self> {
         let current_el = register!("CurrentEL");
         log::info!("RETENTION CurrentEL={}", current_el >> 2);
         require(matches!(current_el, 4 | 8), "requires NS EL1 or EL2")?;
@@ -215,62 +227,73 @@ impl Fixture {
             read(GICD + 0x204) & IRQ_BIT == 0 && read(GICD + 0x304) & IRQ_BIT == 0,
             "GPIO IRQ is already pending or active",
         )?;
-        let mut protocol = protocol::open()?;
-        let interface = ptr::from_mut(&mut *protocol);
+        let handle = boot::get_handle_for_protocol::<HardwareInterrupt>()
+            .map_err(|_| "HardwareInterrupt2 protocol unavailable")?;
+        // This shared firmware protocol stays installed throughout boot services.
+        let protocol = unsafe {
+            boot::open_protocol(
+                OpenProtocolParams {
+                    handle,
+                    agent: boot::image_handle(),
+                    controller: None,
+                },
+                OpenProtocolAttributes::GetProtocol,
+            )
+        }
+        .map_err(|_| "cannot open HardwareInterrupt2 protocol")?;
         // Patina 22.1's SPI getters misindex saved context and misdecode ICFGR.
-        let enabled_word = read(GICD + gpio_irq::ENABLE_OFFSET);
-        let configuration_word = read(GICD + gpio_irq::CONFIG_OFFSET);
-        let enabled = gpio_irq::enabled(enabled_word);
+        let enabled_word = read(GICD + ENABLE_OFFSET);
+        let configuration_word = read(GICD + CONFIG_OFFSET);
         log::warn!("RETENTION bypassing known-bad Patina 22.1 SPI state/trigger getters");
         log::info!(
             "RETENTION HardwareInterrupt2 available; GICD INTID39 ISENABLER1={enabled_word:#x} ICFGR2={configuration_word:#x}"
         );
         require(
-            !enabled,
+            enabled_word & IRQ_BIT == 0,
             "GPIO interrupt already enabled; refusing to take ownership",
         )?;
-        Ok(Self {
-            _protocol: protocol,
-            interface,
+        require(
+            read(GPIO + 8) == 0,
+            "GPIO1 was asserted before fixture setup",
+        )?;
+        let mut fixture = Self {
+            protocol,
             gpio: GPIO_REGISTERS.map(|offset| read(GPIO + offset)),
-            irq_configuration: gpio_irq::configuration(configuration_word),
+            irq_configuration: configuration_word & CONFIG_MASK,
             words: ((read(GICD + 4) & 31) + 1) as usize,
             registered: false,
-            // Read-only discovery does not require device-state restoration.
-            restored: true,
-        })
-    }
-
-    fn configure(&mut self) -> TestResult {
-        require(self.pin_low(), "GPIO1 was asserted before fixture setup")?;
+            restored: false,
+        };
         write(GPIO + 0x410, 0);
         unsafe {
             asm!("dsb sy", options(nostack));
         }
-        PROTOCOL.store(self.interface, Ordering::SeqCst);
+        let interface = ptr::from_mut(&mut *fixture.protocol);
+        PROTOCOL.store(interface, Ordering::SeqCst);
         unsafe {
-            protocol::check(
-                ((*self.interface).register)(self.interface, IRQ, Some(gpio_interrupt)),
+            check(
+                ((*interface).register)(interface, IRQ, Some(gpio_interrupt)),
                 "claim GPIO IRQ (must be unowned)",
             )?;
         }
-        self.registered = true;
+        fixture.registered = true;
         // Registration enables the source; ICFGR changes require it disabled.
-        write(GICD + gpio_irq::DISABLE_OFFSET, IRQ_BIT);
+        write(GICD + 0x184, IRQ_BIT);
         synchronize_gic()?;
         set_gpio_irq_configuration(0)?;
-        write(GPIO + 0x400, self.gpio[0] & !PIN);
-        write(GPIO + 0x404, self.gpio[1] | PIN);
-        write(GPIO + 0x408, self.gpio[2] & !PIN);
-        write(GPIO + 0x40c, self.gpio[3] | PIN);
-        write(GPIO + 0x420, self.gpio[5] & !PIN);
-        self.clear_pending()?;
-        write(GICD + gpio_irq::ENABLE_OFFSET, IRQ_BIT);
+        write(GPIO + 0x400, fixture.gpio[0] & !PIN);
+        write(GPIO + 0x404, fixture.gpio[1] | PIN);
+        write(GPIO + 0x408, fixture.gpio[2] & !PIN);
+        write(GPIO + 0x40c, fixture.gpio[3] | PIN);
+        write(GPIO + 0x420, fixture.gpio[4] & !PIN);
+        fixture.clear_pending()?;
+        write(GICD + ENABLE_OFFSET, IRQ_BIT);
         synchronize_gic()?;
         require(
             gpio_irq_enabled(),
             "GPIO IRQ did not enable after configuration",
-        )
+        )?;
+        Ok(fixture)
     }
 
     pub fn pin_low(&self) -> bool {
@@ -311,12 +334,11 @@ impl Fixture {
         let saved_compare = register!("cntv_cval_el0");
         let saved_pending = read(SGI + 0x200) & GUARD;
         let mut enabled = [0; 32];
-        enabled[0] = read(SGI + 0x100);
-        write(SGI + 0x180, u32::MAX);
-        for (word, state) in enabled.iter_mut().enumerate().take(self.words).skip(1) {
-            *state = read(GICD + 0x100 + word * 4);
+        let banks = core::iter::once(SGI).chain((1..self.words).map(|word| GICD + word * 4));
+        for (bank, state) in banks.clone().zip(&mut enabled) {
+            *state = read(bank + 0x100);
             // Non-secure accesses leave secure interrupt enables untouched.
-            write(GICD + 0x180 + word * 4, u32::MAX);
+            write(bank + 0x180, u32::MAX);
         }
         let result = (|| {
             synchronize_gic()?;
@@ -379,21 +401,15 @@ impl Fixture {
             write(SGI + 0x200, saved_pending);
         }
         timer(saved_control, saved_compare);
-        write(SGI + 0x180, u32::MAX);
-        write(SGI + 0x100, enabled[0]);
-        for (word, state) in enabled.iter().enumerate().take(self.words).skip(1) {
-            write(GICD + 0x180 + word * 4, u32::MAX);
-            write(GICD + 0x100 + word * 4, *state);
+        for (bank, state) in banks.clone().zip(enabled) {
+            write(bank + 0x180, u32::MAX);
+            write(bank + 0x100, state);
         }
         let restored = synchronize_gic().and_then(|()| {
             require(
-                read(SGI + 0x100) == enabled[0]
-                    && enabled
-                        .iter()
-                        .enumerate()
-                        .take(self.words)
-                        .skip(1)
-                        .all(|(word, state)| read(GICD + 0x100 + word * 4) == *state),
+                banks
+                    .zip(enabled)
+                    .all(|(bank, state)| read(bank + 0x100) == state),
                 "interrupt-enable restoration readback mismatch",
             )
         });
@@ -411,31 +427,28 @@ impl Fixture {
         write(GPIO + 0x410, 0);
         let mut result = Ok(());
         if self.registered {
-            write(GICD + gpio_irq::DISABLE_OFFSET, IRQ_BIT);
+            write(GICD + 0x184, IRQ_BIT);
             result =
                 synchronize_gic().and_then(|()| set_gpio_irq_configuration(self.irq_configuration));
-            unsafe {
-                let status = ((*self.interface).register)(self.interface, IRQ, None);
-                if status != Status::SUCCESS {
-                    // Returning would unload a still-registered ISR.
-                    log::error!(
-                        "[FAIL] retention_cleanup - cannot unregister GPIO ISR: {status:?}"
-                    );
-                    runtime::reset(ResetType::SHUTDOWN, Status::ABORTED, None);
-                }
-            }
-            self.registered = false;
-            // Do not conceal a protocol unregistration/disable failure.
-            if let Err(reason) = synchronize_gic().and_then(|()| {
+            let interface = ptr::from_mut(&mut *self.protocol);
+            let unregistered = check(
+                unsafe { ((*interface).register)(interface, IRQ, None) },
+                "cannot unregister GPIO ISR",
+            )
+            .and_then(|()| synchronize_gic())
+            .and_then(|()| {
                 require(
                     !gpio_irq_enabled(),
                     "GPIO IRQ still enabled after unregister",
                 )
-            }) {
+            });
+            if let Err(reason) = unregistered {
+                // Returning could unload a still-registered ISR.
                 log::error!("[FAIL] retention_cleanup - {reason}");
                 runtime::reset(ResetType::SHUTDOWN, Status::ABORTED, None);
             }
-            let configuration = gpio_irq::configuration(read(GICD + gpio_irq::CONFIG_OFFSET));
+            self.registered = false;
+            let configuration = read(GICD + CONFIG_OFFSET) & CONFIG_MASK;
             log::info!(
                 "RETENTION GICD restore readback: enabled={} configuration={:#x} expected={:#x}",
                 gpio_irq_enabled(),
@@ -448,11 +461,8 @@ impl Fixture {
             ));
         }
         for (offset, value) in GPIO_REGISTERS.into_iter().zip(self.gpio) {
-            if offset != 0x410 {
-                write(GPIO + offset, value);
-            }
+            write(GPIO + offset, value);
         }
-        write(GPIO + 0x410, self.gpio[4]);
         PROTOCOL.store(ptr::null_mut(), Ordering::SeqCst);
         self.restored = true;
         result

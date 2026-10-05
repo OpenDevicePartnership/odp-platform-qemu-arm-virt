@@ -153,75 +153,37 @@ make e2e-test
 
 ### TimeAlarm CPU-retention fixture
 
-`time_alarm_retention.efi` tests **firmware CPU standby, not Windows sleep or
-system suspend**. It is opt-in, outside `make e2e-test`.
-
-Prerequisites: wake-capable EC/library, QEMU GPIO1 support, and Patina PL061
-MMIO resources. Build UEFI with the **normal relay SP**, not
-`secure-services-test`. The runner does not update submodules, dependency pins,
-QEMU binaries, or the devcontainer.
+Opt-in `time_alarm_retention.efi` tests **firmware CPU standby, not OS sleep or
+system suspend**; it is outside `make e2e-test`. Build wake-capable EC/library,
+GPIO1-capable QEMU and PL061-mapped Patina with the **normal relay SP**, not
+`secure-services-test`. The runner never updates these prerequisites.
 
 ```bash
 # Compile only; does not build EC/UEFI or start QEMU.
 make -C e2e-tests retention-build
-
-# After adopting/building all prerequisites:
 make -C e2e-tests retention-run TIME_ALARM_SOURCE=ac
-make -C e2e-tests retention-run TIME_ALARM_SOURCE=dc
-make -C e2e-tests retention-run TIME_ALARM_SOURCE=ac TIME_ALARM_WIRE=disconnected
 make -C e2e-tests retention-run TIME_ALARM_SOURCE=dc TIME_ALARM_WIRE=disconnected
 ```
 
-Mandatory `TIME_ALARM_SOURCE=ac|dc` selects separate EC build directories with
-`time-alarm-wake` and build-time `ODP_WAKE_SOURCE`; there is no source fallback.
-This is test-only selection, not power-source detection; both timers start off.
+Mandatory `TIME_ALARM_SOURCE=ac|dc` builds separate `time-alarm-wake` EC fixtures
+using `ODP_WAKE_SOURCE`, not source detection or a fallback. Run both sources
+with both `TIME_ALARM_WIRE=connected|disconnected` (default: connected).
+`RETENTION_EC_QEMU=/path/to/bin/qemu-system-riscv32` selects an isolated EC QEMU
+whose install prefix must exist in the devcontainer; do not change host `PATH`.
+Logs/vdrives remain in `e2e-tests/Build/retention/`.
 
-For an isolated EC QEMU, pass
-`RETENTION_EC_QEMU=/path/to/install/bin/qemu-system-riscv32` to `retention-run`.
-The whole install prefix must exist inside the devcontainer; do not replace
-host QEMU via `PATH`. CI should use a published, pinned builder image.
+Connected runs require inactive-timer guard, selected-timer wake and clear/rearm
+(six passes); disconnected runs require the EC wake latch but a host guard
+(four passes), omitting only host GPIO1, not HID/I2C/relay. Wake requires INTID 39,
+exclusive pin1 cause, ISR/EOI and 1–10 seconds residency (upper bound exclusive).
+Guards require CNTV/PPI 27 and 9–11 seconds; HID, early returns and external
+timeouts cannot pass. Clear acknowledges pin-low before clearing pending IRQs.
+Admission checks precede device writes; firmware IRQ/timer/device state is
+restored on failure too, with failed cleanup rejecting the run.
 
-Runs keep logs/vdrives in `e2e-tests/Build/retention/` and private sockets in
-`/tmp/odp-retention.*`. Disconnected mode omits only the host GPIO1 connection:
-the EC still asserts its wake output; GPIO0/HID, I2C and UART/SP relay remain.
-Connected acceptance requires an inactive-timer guard, selected-timer wake and
-clear/rearm repeat (six passes); disconnected requires the EC wake latch but
-only a host guard return (four passes). Clear/disable must acknowledge GPIO1
-low before PL061/GIC pending state is cleared.
-
-Pinned TF-A (`842ce6391`, `plat/qemu/common/qemu_pm.c`) implements state `1`
-as `DSB; WFI`; the app calls `CPU_SUSPEND64(1, 0, 0)` once per attempt.
-IRQ dispatch stays masked through return-cause capture. Wake requires INTID 39,
-pin 1 high, only PL061 bit 1 pending, actual GPIO1 ISR/EOI and at least one
-second of residency before the guard. Negative cases require CNTV/PPI 27,
-guard status, no GPIO1 wake and 9–11 seconds of residency. HID or unexpected/
-secure-world wakes cannot pass; the app does not poll back into standby.
-
-Requires the boot CPU, GICv3 affinity routing and no enabled LPIs.
-Patina 22.1's broken SPI state/trigger getters require direct GICD snapshots
-and readback; HardwareInterrupt2 still owns INTID 39 registration/EOI, with no
-success fallback on protocol errors. Other IRQ sources are isolated. IRQ/device
-state and TimerDxe period/callback are restored even on rejection; SGI/PPI/SPI
-enables must match the raw snapshot before dispatch resumes. Failure to
-unregister the ISR is logged and shuts down rather than leaving dangling code.
-
-Five-second EC alarms must have 3–5 seconds remaining at the last query;
-query-through-entry must take under one host second, with at least nine guard
-seconds left. Excessive two-QEMU clock drift or relay latency fails.
-`QEMU_TIMEOUT` is only a failure backstop, never wake evidence.
-
-Host-only checks, without firmware execution:
-
-```bash
-python3 scripts/tests/test_time_alarm_retention.py
-cd e2e-tests
-test_binary=$(mktemp /tmp/retention-evidence.XXXXXX)
-for suite in evidence gpio_irq; do
-  rustc --test "tests/time-alarm-retention/src/$suite.rs" -o "$test_binary"
-  "$test_binary"
-done
-rm "$test_binary"
-```
+Host-only checks: from `e2e-tests/`, compile
+`tests/time-alarm-retention/src/interrupt.rs` with
+`rustc --edition=2021 --test` and run the resulting test binary.
 
 ### Adjusting the Timeout
 

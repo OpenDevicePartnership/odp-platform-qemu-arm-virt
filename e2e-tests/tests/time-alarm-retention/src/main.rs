@@ -5,10 +5,8 @@
 #![no_main]
 #![no_std]
 
-mod evidence;
-mod gpio_irq;
+mod interrupt;
 mod platform;
-mod protocol;
 
 use platform::{counter, frequency, Fixture};
 use test_support::{run_tests, E2eContext, TIME_ALARM_UUID};
@@ -22,10 +20,6 @@ const SET_TIMER: u8 = 6;
 const GET_TIMER: u8 = 7;
 const SET_POLICY: u8 = 8;
 const ALARM_SECONDS: u32 = 5;
-
-enum Mode {
-    Wake { source: u32, connected: bool },
-}
 
 #[entry]
 fn main() -> Status {
@@ -44,28 +38,22 @@ fn require(condition: bool, reason: &'static str) -> TestResult {
     }
 }
 
-fn arguments() -> TestResult<Mode> {
+fn arguments() -> TestResult<(u32, bool)> {
     let params = boot::open_protocol_exclusive::<ShellParameters>(boot::image_handle())
         .map_err(|_| "shell parameters unavailable")?;
     let mut args = params.args().skip(1);
-    let selected = args.next();
     require(params.args_len() == 3, "expected source and wire arguments")?;
-    let source = if selected == Some(cstr16!("ac")) {
-        0
-    } else if selected == Some(cstr16!("dc")) {
-        1
-    } else {
-        return Err("source must be explicitly ac or dc");
+    let source = match args.next() {
+        Some(arg) if arg == cstr16!("ac") => 0,
+        Some(arg) if arg == cstr16!("dc") => 1,
+        _ => return Err("source must be explicitly ac or dc"),
     };
-    let wire = args.next();
-    let connected = if wire == Some(cstr16!("connected")) {
-        true
-    } else if wire == Some(cstr16!("disconnected")) {
-        false
-    } else {
-        return Err("wire must be connected or disconnected");
+    let connected = match args.next() {
+        Some(arg) if arg == cstr16!("connected") => true,
+        Some(arg) if arg == cstr16!("disconnected") => false,
+        _ => return Err("wire must be connected or disconnected"),
     };
-    Ok(Mode::Wake { source, connected })
+    Ok((source, connected))
 }
 
 fn scalar(ctx: &mut E2eContext, command: u8, timer: u32, value: Option<u32>) -> TestResult<u32> {
@@ -154,18 +142,18 @@ fn attempt(
 }
 
 fn run(ctx: &mut E2eContext) -> TestResult {
-    let Mode::Wake { source, connected } = arguments()?;
+    let (source, connected) = arguments()?;
+    let wire = if connected {
+        "connected"
+    } else {
+        "disconnected"
+    };
     log::info!(
-        "RETENTION fixture={} wire={}",
+        "RETENTION fixture={} wire={wire}",
         if source == 0 { "ac" } else { "dc" },
-        if connected {
-            "connected"
-        } else {
-            "disconnected"
-        }
     );
     let mut fixture = Fixture::new()?;
-    let outcome = (|| {
+    let mut outcome = (|| {
         if connected {
             attempt(ctx, &mut fixture, 1 - source, false, false)?;
             ctx.pass("retention_inactive_alarm_guard");
@@ -179,13 +167,11 @@ fn run(ctx: &mut E2eContext) -> TestResult {
         }
         Ok(())
     })();
-    let disarmed = disarm(ctx);
-    let acknowledged = acknowledge(ctx, &fixture);
-    let restored = fixture.restore();
-    for result in [disarmed, acknowledged, restored] {
+    for result in [disarm(ctx), acknowledge(ctx, &fixture), fixture.restore()] {
         if let Err(reason) = result {
             log::error!("Retention cleanup: {reason}");
         }
+        outcome = outcome.and(result);
     }
-    outcome.and(disarmed).and(acknowledged).and(restored)
+    outcome
 }
