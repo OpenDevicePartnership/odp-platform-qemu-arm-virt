@@ -19,8 +19,12 @@ mkdir -p "$root"
 run=$(mktemp -d "$root/$source_mode-$wire.XXXXXX")
 sockets=$(mktemp -d /tmp/odp-retention.XXXXXX)
 cleanup() {
-    rm -f "$sockets/i2c" "$sockets/hid" "$sockets/wake" "$sockets/power" "$sockets/control"
-    rmdir "$sockets"
+    local status=$?
+    if ! rm -f "$sockets/i2c" "$sockets/hid" "$sockets/wake" "$sockets/power" "$sockets/control" || ! rmdir "$sockets"; then
+        echo "ERROR: failed to clean retention sockets: $sockets" >&2
+        if [ "$status" -eq 0 ]; then status=1; fi
+    fi
+    exit "$status"
 }
 trap cleanup EXIT
 export EC_I2C_SOCK="$sockets/i2c" EC_GPIO_SOCK="$sockets/hid" EC_WAKE_SOCK="$sockets/wake"
