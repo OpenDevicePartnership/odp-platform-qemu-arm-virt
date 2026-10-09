@@ -151,6 +151,40 @@ make -C e2e-tests test-sp-services
 make e2e-test
 ```
 
+### TimeAlarm CPU-retention fixture
+
+Opt-in `time_alarm_retention.efi` tests **firmware CPU standby, not OS sleep or
+system suspend**; it is outside `make e2e-test`. Build wake-capable EC/library,
+GPIO1-capable QEMU and PL061-mapped Patina with the **normal relay SP**, not
+`secure-services-test`. The runner never updates these prerequisites.
+
+```bash
+# Compile only; does not build EC/UEFI or start QEMU.
+make -C e2e-tests retention-build
+make -C e2e-tests retention-run TIME_ALARM_SOURCE=ac
+make -C e2e-tests retention-run TIME_ALARM_SOURCE=dc TIME_ALARM_WIRE=disconnected
+```
+
+Mandatory `TIME_ALARM_SOURCE=ac|dc` builds separate `time-alarm-wake` EC fixtures
+using `ODP_WAKE_SOURCE`, not source detection or a fallback. Run both sources
+with both `TIME_ALARM_WIRE=connected|disconnected` (default: connected).
+`RETENTION_EC_QEMU=/path/to/bin/qemu-system-riscv32` selects an isolated EC QEMU
+whose install prefix must exist in the devcontainer; do not change host `PATH`.
+Logs/vdrives remain in `e2e-tests/Build/retention/`.
+
+Connected runs require inactive-timer guard, selected-timer wake and clear/rearm
+(six passes); disconnected runs require the EC wake latch but a host guard
+(four passes), omitting only host GPIO1, not HID/I2C/relay. Wake requires INTID 39,
+exclusive pin1 cause, ISR/EOI and 1–10 seconds residency (upper bound exclusive).
+Guards require CNTV/PPI 27 and 9–11 seconds; HID, early returns and external
+timeouts cannot pass. Clear acknowledges pin-low before clearing pending IRQs.
+Admission checks precede device writes; firmware IRQ/timer/device state is
+restored on failure too, with failed cleanup rejecting the run.
+
+Host-only checks: from `e2e-tests/`, compile
+`tests/time-alarm-retention/src/interrupt.rs` with
+`rustc --edition=2021 --test` and run the resulting test binary.
+
 ### Adjusting the Timeout
 
 The default QEMU timeout is 180 seconds. Override with:
