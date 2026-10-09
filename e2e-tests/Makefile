@@ -200,6 +200,49 @@ test-sp-ec-link:            relay-run-thermal
 test-sp-ec-link-battery:    relay-run-battery
 test-sp-ec-link-time-alarm: relay-run-time-alarm
 
+# Opt-in: requires the wake-capable EC, QEMU and PL061-mapped firmware cascade.
+# Separate target directories prevent AC/DC fixture builds overwriting each other.
+TIME_ALARM_SOURCE ?=
+TIME_ALARM_WIRE ?= connected
+RETENTION_EC_QEMU ?= qemu-system-riscv32
+RETENTION_EC_TARGET := e2e-tests/Build/retention-ec-$(TIME_ALARM_SOURCE)
+RETENTION_EC_ELF := $(RETENTION_EC_TARGET)/riscv32imac-unknown-none-elf/release/dev-qemu
+
+.PHONY: retention-options retention-build retention-ec retention-run
+retention-options:
+	@case "$(TIME_ALARM_SOURCE)" in ac|dc) ;; *) echo "ERROR: TIME_ALARM_SOURCE must be ac or dc" >&2; exit 2 ;; esac
+	@case "$(TIME_ALARM_WIRE)" in connected|disconnected) ;; *) echo "ERROR: TIME_ALARM_WIRE must be connected or disconnected" >&2; exit 2 ;; esac
+
+retention-build: builder-image
+	@$(DC_RUN) -w e2e-tests -- cargo build --release --locked -p time_alarm_retention
+
+retention-ec: retention-options builder-image
+	@$(DC_RUN) -w mod/ec/platform/dev-qemu -- \
+		env ODP_WAKE_SOURCE=$(TIME_ALARM_SOURCE) cargo build --release --locked \
+		--features time-alarm-wake \
+		--target-dir $(REPO_ROOT_IN_DEVCONTAINER)/$(RETENTION_EC_TARGET)
+
+retention-run: retention-options retention-build retention-ec $(COVERAGE_PLUGIN)
+	@$(DC_RUN) -- env EC_QEMU="$(RETENTION_EC_QEMU)" bash scripts/test-time-alarm-retention.sh \
+		$(TIME_ALARM_SOURCE) $(TIME_ALARM_WIRE) $(RETENTION_EC_ELF) \
+		$(BIOS_FV_DIR) e2e-tests/Build/retention \
+		e2e-tests/$(TARGET_DIR)/time_alarm_retention.efi e2e-tests/$(COVERAGE_PLUGIN) \
+		$(QEMU_TIMEOUT) $(SERIAL_TEE) -- $(QEMU_COMMON_ARGS)
+
+.PHONY: retention-power-input retention-power-input-ec
+retention-power-input-ec: retention-options builder-image
+	@$(DC_RUN) -w mod/ec/platform/dev-qemu -- cargo build --release --locked \
+		--features time-alarm-power-input \
+		--target-dir $(REPO_ROOT_IN_DEVCONTAINER)/e2e-tests/Build/retention-ec-power-input
+
+retention-power-input: retention-options retention-build retention-power-input-ec $(COVERAGE_PLUGIN)
+	@$(DC_RUN) -- env EC_QEMU="$(RETENTION_EC_QEMU)" bash scripts/test-time-alarm-retention.sh \
+		$(TIME_ALARM_SOURCE) power-input \
+		e2e-tests/Build/retention-ec-power-input/riscv32imac-unknown-none-elf/release/dev-qemu \
+		$(BIOS_FV_DIR) e2e-tests/Build/retention \
+		e2e-tests/$(TARGET_DIR)/time_alarm_retention.efi e2e-tests/$(COVERAGE_PLUGIN) \
+		$(QEMU_TIMEOUT) $(SERIAL_TEE) -- $(QEMU_COMMON_ARGS)
+
 # ------------------------------------------------------------
 # Generate coverage report from collected PCs
 # ------------------------------------------------------------
