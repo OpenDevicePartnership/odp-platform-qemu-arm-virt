@@ -14,6 +14,9 @@ Device(RTC)
 {
     Name (_HID, "ACPI000E")  // _HID: Hardware ID
     Name (_UID, 0)  // _UID: Unique ID
+    // Prevents Windows from enumerating this and binding to acpitime
+    // Necessary to avoid colliding with the HIDTime driver
+    Name (_STA, Zero)
 
     // 144 bytes = 18 64-bit registers, which is the be the number of registers that FF-A uses to pass stuff to the secure partition.
     //
