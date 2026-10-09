@@ -4,7 +4,7 @@
 #
 
 # Prebuilt QEMU (aarch64 + riscv32) with TPM + GTK module support.
-ARG QEMU_BUILDER_IMAGE=ghcr.io/opendevicepartnership/odp-qemu-builder/qemu@sha256:376bc8a3b84398ea6b265ddb3a1a899a879ef4b324193349a011302969a45089
+ARG QEMU_BUILDER_IMAGE=ghcr.io/opendevicepartnership/odp-qemu-builder/qemu@sha256:fd0b1ba9cf58fa6a7310429f57ecbcda850b51717fc399e1bb2d85ec45d8612a
 FROM ${QEMU_BUILDER_IMAGE} AS qemu-builder
 
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
