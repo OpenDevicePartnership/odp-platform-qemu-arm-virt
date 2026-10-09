@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 11 ] || [ "${10}" != -- ]; then
-    echo "Usage: $0 ac|dc connected|disconnected|power-input EC_ELF BIOS_FV_DIR BUILD_ROOT EFI COVERAGE_PLUGIN TIMEOUT SERIAL_TEE -- QEMU_ARGS..." >&2
+    echo "Usage: $0 ac|dc connected|disconnected|power-input EC_ELF BIOS_FV_DIR BUILD_ROOT EFI COVERAGE_PLUGIN TIMEOUT SERIAL_TEE -- QEMU_ARG [QEMU_ARG...]" >&2
     exit 2
 fi
 source_mode=$1 wire=$2 ec_elf=$3 bios=$4 root=$5 efi=$6 plugin=$7 timeout_s=$8 tee_serial=$9

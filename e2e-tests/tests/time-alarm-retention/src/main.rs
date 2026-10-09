@@ -189,11 +189,14 @@ fn run(ctx: &mut E2eContext) -> TestResult {
         }
         Ok(())
     })();
-    for result in [disarm(ctx), acknowledge(ctx, &fixture), fixture.restore()] {
+    let mut record_cleanup = |result| {
         if let Err(reason) = result {
             log::error!("Retention cleanup: {reason}");
         }
         outcome = outcome.and(result);
-    }
+    };
+    record_cleanup(disarm(ctx));
+    record_cleanup(acknowledge(ctx, &fixture));
+    record_cleanup(fixture.restore());
     outcome
 }
