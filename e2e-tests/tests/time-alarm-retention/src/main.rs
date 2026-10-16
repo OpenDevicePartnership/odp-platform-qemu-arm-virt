@@ -7,6 +7,7 @@
 
 mod interrupt;
 mod platform;
+mod power_input;
 
 use platform::{counter, frequency, Fixture};
 use test_support::{run_tests, E2eContext, TIME_ALARM_UUID};
@@ -20,6 +21,11 @@ const SET_TIMER: u8 = 6;
 const GET_TIMER: u8 = 7;
 const SET_POLICY: u8 = 8;
 const ALARM_SECONDS: u32 = 5;
+
+enum Mode {
+    Wake { source: u32, connected: bool },
+    PowerInput(u32),
+}
 
 #[entry]
 fn main() -> Status {
@@ -38,12 +44,23 @@ fn require(condition: bool, reason: &'static str) -> TestResult {
     }
 }
 
-fn arguments() -> TestResult<(u32, bool)> {
+fn arguments() -> TestResult<Mode> {
     let params = boot::open_protocol_exclusive::<ShellParameters>(boot::image_handle())
         .map_err(|_| "shell parameters unavailable")?;
     let mut args = params.args().skip(1);
-    require(params.args_len() == 3, "expected source and wire arguments")?;
-    let source = match args.next() {
+    let selected = args.next();
+    require(
+        params.args_len() == 3,
+        "expected source and wire arguments, or power-input and source",
+    )?;
+    if selected == Some(cstr16!("power-input")) {
+        return match args.next() {
+            Some(value) if value == cstr16!("ac") => Ok(Mode::PowerInput(0)),
+            Some(value) if value == cstr16!("dc") => Ok(Mode::PowerInput(1)),
+            _ => Err("power-input requires an explicit ac or dc startup source"),
+        };
+    }
+    let source = match selected {
         Some(arg) if arg == cstr16!("ac") => 0,
         Some(arg) if arg == cstr16!("dc") => 1,
         _ => return Err("source must be explicitly ac or dc"),
@@ -53,7 +70,7 @@ fn arguments() -> TestResult<(u32, bool)> {
         Some(arg) if arg == cstr16!("disconnected") => false,
         _ => return Err("wire must be connected or disconnected"),
     };
-    Ok((source, connected))
+    Ok(Mode::Wake { source, connected })
 }
 
 fn scalar(ctx: &mut E2eContext, command: u8, timer: u32, value: Option<u32>) -> TestResult<u32> {
@@ -142,7 +159,10 @@ fn attempt(
 }
 
 fn run(ctx: &mut E2eContext) -> TestResult {
-    let (source, connected) = arguments()?;
+    let (source, connected, power_input) = match arguments()? {
+        Mode::Wake { source, connected } => (source, connected, false),
+        Mode::PowerInput(source) => (source, true, true),
+    };
     let wire = if connected {
         "connected"
     } else {
@@ -154,7 +174,9 @@ fn run(ctx: &mut E2eContext) -> TestResult {
     );
     let mut fixture = Fixture::new()?;
     let mut outcome = (|| {
-        if connected {
+        if power_input {
+            power_input::run(ctx, &mut fixture, source)?;
+        } else if connected {
             attempt(ctx, &mut fixture, 1 - source, false, false)?;
             ctx.pass("retention_inactive_alarm_guard");
             attempt(ctx, &mut fixture, source, true, true)?;
