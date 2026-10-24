@@ -52,11 +52,23 @@ To exercise the secure UCSI stub without an EC sidecar:
 make windows-acpi-e2e WINDOWS_ACPI_E2E_SERVICE=ucsi
 ```
 
-Only `thermal`, `ucsi`, and `battery` are accepted. The UCSI executable reads
+The UCSI executable reads
 connector 1 through the shared Windows ACPI `UcsiSource::get_snapshot` API and checks
 UCSI version `0x0120`, one PD-capable connector with PD revision `0x0300`,
 DRP/USB2/USB3/provider/consumer support, and a connected USB partner with sink
 power direction. It does not test native Windows UCSI class-driver enumeration.
+
+To exercise the platform RTC methods with the EC sidecar:
+
+```sh
+make windows-acpi-e2e WINDOWS_ACPI_E2E_SERVICE=rtc
+```
+
+RTC checks timestamp set/readback, AC/DC expired-status clearing, and policy
+0/45 set/readback. For `NEVER` (`0xFFFFFFFF`), it checks setter acceptance and
+peer-timer isolation only: the getter uses the same value as its error sentinel.
+This does not qualify physical wake, power-source switching, or notifications.
+The accepted service selections are `thermal`, `ucsi`, `battery`, and `rtc`.
 
 The target initializes submodules, provisions the devcontainer, downloads a
 verified stable ValidationOS base, builds current firmware and ACPI, injects
@@ -65,6 +77,11 @@ Thermal and battery run declarative tests through the release
 `ec-test-cli --source acpi script run` interface. UCSI builds this checkout's
 locked ARM64 smoke executable with `cargo-xwin` and injects it into the overlay;
 it does not depend on UCSI commands in the release CLI.
+RTC uses the declarative interface with a CLI rebuilt from the upstream
+revision pinned in `windows-acpi-e2e/adapters/rtc/platform-common-rev.txt`.
+It replaces the image's older CLI only in the disposable overlay to provide
+timestamp Buffer literals and RTC setter-status checking. See the
+[RTC fixture](windows-acpi-e2e/adapters/rtc/README.md) for compatibility details.
 These are focused service selections with fixed payloads, success summaries,
 and runtime evidence under one shared lifecycle, not a generic adapter API.
 Battery reuses the CLI's existing structured ACPI decoding; it adds no decoder
@@ -87,12 +104,14 @@ configured thermal service through FF-A.
 Battery requires all four DSL checks to pass, the current run's EC
 `Starting uart service` boot marker, and a secure FF-A request trace containing
 battery UUID `25cb5207-ac36-427d-aaef-3aa78877d27e`, not merely the static manifest.
+RTC requires all 40 DSL assertions, the current-run EC boot marker, and a
+secure FF-A request trace containing UUID `23ea63ed-b593-46ea-b027-8924df88e92f`.
 UCSI also requires a current-run secure FF-A request trace containing
 its UUID. Its exact required ARM64 driver inventory and UUID live under
 `windows-acpi-e2e/adapters/ucsi/`; unrelated
 drivers already installed in the shared base are allowed.
 The pinned Hafnium emits this request trace through UART0 into `serial0.log`;
-the separate UART1 `secure_mm.log` is not the battery or UCSI execution evidence.
+the separate UART1 `secure_mm.log` is not the battery, UCSI, or RTC execution evidence.
 
 The release asset is accepted only with the SHA-256 digest provided by GitHub.
 Override `WINDOWS_ACPI_E2E_REPO` and `WINDOWS_ACPI_E2E_RELEASE` for validation
@@ -108,11 +127,13 @@ Successful runs retain compact evidence under `.e2e/evidence/`, including the
 verified generated manifest, guest result, and boot logs, and remove their overlay.
 Failed runs also retain the full run directory.
 Battery retains `battery.log` plus the host, secure serial, and EC-sidecar logs.
+RTC retains `rtc.log`, those runtime logs, and the CLI source revision,
+binary hash, build log, and ARM64 executable/import inspection results.
 UCSI logs include `ucsi.log` and the smoke build evidence. A valid result needs
 the complete service-specific summary, exact `PASS: Windows ACPI E2E` result,
 zero QEMU exit status, and the corresponding runtime evidence.
 
-Pull-request CI runs all three services against the VHDX produced by the
+Pull-request CI runs all four services against the VHDX produced by the
 workflow's Windows build job. `WINDOWS_ACPI_E2E_BASE_IMAGE` selects that
 repo-local artifact instead of downloading the rolling release; all build,
 overlay, boot, verification, and evidence logic remains shared.
@@ -124,10 +145,10 @@ make windows-acpi-e2e-all
 ```
 
 This initializes/provisions and enters the devcontainer once, then invokes the
-existing runner in fixed **thermal, ucsi, battery** order, always continuing
-after failures. It ignores the service selection for the matrix; individual
-commands above and the CI matrix remain unchanged. Issue #148 is the shared
-image/build/overlay/QEMU/evidence infrastructure, not a fourth runnable adapter.
+existing runner in fixed **thermal, ucsi, battery, rtc** order, always continuing
+after failures. It ignores the individual service selection and runs the same
+four services covered by the CI matrix. Issue #148 is the shared
+image/build/overlay/QEMU/evidence infrastructure, not a runnable service.
 
 Use the same `WINDOWS_ACPI_E2E_REPO` / `WINDOWS_ACPI_E2E_RELEASE` inputs, or
 `WINDOWS_ACPI_E2E_BASE_IMAGE=path/to/prepared.vhdx` for an already prepared,
@@ -162,7 +183,7 @@ results. `BLOCKED` means setup, build, or image compatibility prevented that
 run evidence, or retention failed after a zero runner exit (reported as exit
 code 1). Retention failures make the aggregate nonzero while preserving an
 existing `FAIL`/`BLOCKED` status and its original exit code. The aggregate exits
-zero only when all three pass; it does not reinterpret the runner's payload
+zero only when all four pass; it does not reinterpret the runner's payload
 assertions.
 
 Each row retains the runner's evidence at `.e2e/evidence/<run-id>/`, with
