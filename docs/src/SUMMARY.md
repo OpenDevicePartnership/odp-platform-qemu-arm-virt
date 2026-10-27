@@ -6,6 +6,7 @@
 
 - [Devcontainer](development/devcontainer.md)
 - [End-to-End Tests](development/e2e-tests.md)
+- [Embedded Controller](development/embedded-controller.md)
 
 # QEMU Guide
 
