@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: MIT
 #
 
-# Prebuilt QEMU (aarch64 + riscv32) with TPM + GTK module support.
-ARG QEMU_BUILDER_IMAGE=ghcr.io/opendevicepartnership/odp-qemu-builder/qemu@sha256:fd0b1ba9cf58fa6a7310429f57ecbcda850b51717fc399e1bb2d85ec45d8612a
+# Prebuilt QEMU (aarch64 + riscv32 + x86_64) with TPM + GTK module support.
+ARG QEMU_BUILDER_IMAGE=ghcr.io/opendevicepartnership/odp-qemu-builder/qemu@sha256:cd323847e820e87be1c6e1f1eb437499547e8020e616b23941845fa9ee31a6a4
 FROM ${QEMU_BUILDER_IMAGE} AS qemu-builder
 
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
@@ -161,6 +161,7 @@ USER root
 
 COPY --from=qemu-builder /usr/local/bin/qemu-system-aarch64 /usr/local/bin/qemu-system-aarch64
 COPY --from=qemu-builder /usr/local/bin/qemu-system-riscv32 /usr/local/bin/qemu-system-riscv32
+COPY --from=qemu-builder /usr/local/bin/qemu-system-x86_64 /usr/local/bin/qemu-system-x86_64
 COPY --from=qemu-builder /usr/local/share/qemu/ /usr/local/share/qemu/
 COPY --from=qemu-builder /usr/local/lib/qemu/ /usr/local/lib/qemu/
 
