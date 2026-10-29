@@ -1,14 +1,17 @@
-# Builds the ODP Validation OS VHDX image on a Windows runner.
+# Builds the ODP ARM64 and AMD64 Validation OS VHDX images on Windows runners.
 #
 # SPDX-License-Identifier: MIT
 #
 # Downloads pre-built driver assets from the latest odp-windows-drivers release,
-# unzips them, builds a Validation OS WIM, injects the QEMU drivers, and converts
-# the result to VHDX.  The list of driver assets to download is maintained in
-# postbuild/os/prebuilt/driverlist.txt.
+# unzips them, builds a Validation OS WIM, injects the QEMU drivers on ARM64 only,
+# and converts the result to VHDX. The list of driver assets to download is
+# maintained in postbuild/os/prebuilt/driverlist.txt. AMD64 skips driver injection.
 #
-# It also downloads the EC test apps from the latest odp-platform-common release,
-# extracts them to C:\ectest, and matches the payload's `acpi` source contract.
+# It also downloads the EC test apps from the latest odp-platform-common
+# release, extracts them to C:\ectest, and matches the payload's `acpi`
+# source contract on ARM64.
+#
+# Currently, AMD64 bundles the apps without ODP driver or EC access until driver support is added.
 #
 # Pull requests build the image for validation only. Every other trigger publishes
 # the stable base used by `make run_os` and `make windows-acpi-e2e`.
@@ -80,10 +83,26 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
-    name: Build QEMU ARM64 OS image
+    name: Build QEMU ${{ matrix.platform }} OS image
     timeout-minutes: 30
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ARM64
+            minimum_build: 28000
+            iso_url: https://aka.ms/DownloadValidationOS_26H1_arm64
+            app_asset: ec-test-apps-ARM64.zip
+            inject_drivers: true
+            release_asset: os-image.zip
+          - platform: x86_64
+            minimum_build: 26100
+            iso_url: https://aka.ms/DownloadValidationOS
+            app_asset: ec-test-apps-x86_64.zip
+            inject_drivers: false # Temporary until driver support is added for AMD64
+            release_asset: os-image-x86_64.zip
     defaults:
       run:
         shell: pwsh
@@ -94,6 +113,7 @@ jobs:
           ref: ${{ inputs.git_ref || github.ref }}
 
       - name: Resolve driver assets
+        if: matrix.inject_drivers
         run: |
           $assetNames = Get-Content -Path 'postbuild\os\prebuilt\driverlist.txt' |
             ForEach-Object { $_.Trim() } |
@@ -111,6 +131,7 @@ jobs:
           "DRIVER_ASSET_NAMES_FILE=$assetNamesFile" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Download driver assets
+        if: matrix.inject_drivers
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -146,7 +167,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $appsRepo = '${{ inputs.apps_repo || 'OpenDevicePartnership/odp-platform-common' }}'
-          $assetName = 'ec-test-apps-ARM64.zip'
+          $assetName = '${{ matrix.app_asset }}'
 
           $zipPath = Join-Path $env:RUNNER_TEMP $assetName
           if (Test-Path $zipPath) { Remove-Item -Path $zipPath -Force }
@@ -165,7 +186,7 @@ jobs:
         run: |
           curl.exe --fail --location --retry 5 --retry-all-errors `
             --continue-at - --output ValidationOS.iso `
-            https://aka.ms/DownloadValidationOS_26H1_arm64
+            '${{ matrix.iso_url }}'
           if ($LASTEXITCODE -ne 0) {
             throw "ValidationOS ISO download failed with exit code $LASTEXITCODE"
           }
@@ -205,7 +226,7 @@ jobs:
 
       - name: Validate ValidationOS build floor
         run: |
-          $minimumBuild = 28000
+          $minimumBuild = [int]'${{ matrix.minimum_build }}'
           $image = Get-WindowsImage -ImagePath $env:WIM_PATH -Index 1
           $version = [version]$image.Version
           if ($version.Build -lt $minimumBuild) {
@@ -217,10 +238,6 @@ jobs:
         run: |
           if (-not $env:WIM_PATH) {
             throw 'WIM_PATH is not set'
-          }
-
-          if (-not (Test-Path $env:DRIVER_ASSET_NAMES_FILE)) {
-            throw "Driver asset list '$env:DRIVER_ASSET_NAMES_FILE' does not exist"
           }
 
           if (-not $env:EC_TEST_APPS_ZIP) {
@@ -236,23 +253,24 @@ jobs:
 
           New-Item -ItemType Directory -Path $mountPath -Force | Out-Null
 
-          $assetNames = Get-Content -Path $env:DRIVER_ASSET_NAMES_FILE
-
-          $driverRoots = $assetNames | ForEach-Object { Resolve-Path (Join-Path 'drivers' $_) }
-
-          if (-not $driverRoots) {
-            throw "No driver paths resolved from $env:DRIVER_ASSET_NAMES_FILE"
+          $infPaths = @()
+          if ('${{ matrix.inject_drivers }}' -eq 'true') {
+            if (-not (Test-Path $env:DRIVER_ASSET_NAMES_FILE)) {
+              throw "Driver asset list '$env:DRIVER_ASSET_NAMES_FILE' does not exist"
+            }
+            $assetNames = Get-Content -Path $env:DRIVER_ASSET_NAMES_FILE
+            $driverRoots = $assetNames | ForEach-Object { Resolve-Path (Join-Path 'drivers' $_) }
+            if (-not $driverRoots) {
+              throw "No driver paths resolved from $env:DRIVER_ASSET_NAMES_FILE"
+            }
+            $infPaths = foreach ($driverRoot in $driverRoots) {
+              Get-ChildItem -Path $driverRoot -Recurse -Filter *.inf -File
+            }
+            if (-not $infPaths) {
+              throw "No INF files found for any driver listed in $env:DRIVER_ASSET_NAMES_FILE"
+            }
+            $infPaths = $infPaths | Sort-Object FullName -Unique
           }
-
-          $infPaths = foreach ($driverRoot in $driverRoots) {
-            Get-ChildItem -Path $driverRoot -Recurse -Filter *.inf -File
-          }
-
-          if (-not $infPaths) {
-            throw "No INF files found for any driver listed in $env:DRIVER_ASSET_NAMES_FILE"
-          }
-
-          $infPaths = $infPaths | Sort-Object FullName -Unique
 
           try {
             dism.exe /Mount-Image /ImageFile:$wimPath /Index:1 /MountDir:$mountPath
@@ -348,7 +366,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $vhdxPath = 'staging\os-image.vhdx'
-          $zipPath = Join-Path $env:RUNNER_TEMP 'os-image.zip'
+          $zipPath = Join-Path $env:RUNNER_TEMP '${{ matrix.release_asset }}'
           if (Test-Path $zipPath) { Remove-Item -Path $zipPath -Force }
 
           # Relies on the job's pwsh shell: Windows PowerShell 5.1 cannot write the
@@ -359,10 +377,10 @@ jobs:
           # Uploading only the asset leaves the hand-created 'latest' prerelease and
           # its tag untouched; --clobber replaces the asset from the previous run.
           gh release upload latest $zipPath --repo $env:GITHUB_REPOSITORY --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to upload os-image.zip to the latest release.' }
+          if ($LASTEXITCODE -ne 0) { throw "Failed to upload ${{ matrix.release_asset }} to the latest release." }
 
       - name: Upload E2E base
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && matrix.platform == 'ARM64'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: windows-acpi-e2e-base
