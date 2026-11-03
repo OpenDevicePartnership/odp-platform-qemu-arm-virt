@@ -9,6 +9,12 @@ SHELL := /bin/bash
 
 include ../Common.mk
 
+ifneq ($(ARCH),aarch64)
+ifneq ($(if $(MAKECMDGOALS),$(filter-out clean,$(MAKECMDGOALS)),all),)
+$(error Secure-partition E2E builds/tests require ARCH=aarch64)
+endif
+endif
+
 # Build output paths
 TARGET_DIR := target/aarch64-unknown-uefi/release
 

@@ -11,7 +11,13 @@ include ../Common.mk
 # ------------------------------------------------------------
 # Default target
 # ------------------------------------------------------------
+ifeq ($(ARCH),aarch64)
 all: secure-services ec uefi
+UEFI_TARGET := patina-qemu-odp-sp
+else
+all: uefi
+UEFI_TARGET := patina-qemu-odp
+endif
 
 # ------------------------------------------------------------
 # Secure Services
@@ -26,12 +32,15 @@ secure-services-test:
 # ------------------------------------------------------------
 # UEFI (depends on secure-services to consume its artifacts)
 # ------------------------------------------------------------
-uefi: secure-services uefi-only
+ifeq ($(ARCH),aarch64)
+uefi: secure-services
+endif
+uefi: uefi-only
 
 # UEFI without rebuilding secure-services — used by e2e-test, which builds
 # secure-services-test first and would have it clobbered by the regular dep.
 uefi-only:
-	$(MAKE) -C uefi patina-qemu-ec
+	$(MAKE) -C uefi $(UEFI_TARGET)
 
 # ------------------------------------------------------------
 # EC firmware (RISC-V)

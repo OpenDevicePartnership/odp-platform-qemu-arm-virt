@@ -1,7 +1,24 @@
-# Shared variables and targets included by all Makefiles in the ODP QEMU `virt` Platform build system.
+# Shared variables and targets included by all Makefiles in the ODP QEMU platform build system.
 #
 # SPDX-License-Identifier: MIT
 #
+
+ARCH ?= aarch64
+ifeq ($(ARCH),aarch64)
+UEFI_PACKAGE := QemuArmVirtPkg
+else ifeq ($(ARCH),x86_64)
+UEFI_PACKAGE := QemuQ35Pkg
+else
+$(error ARCH must be aarch64 or x86_64 (got '$(ARCH)'))
+endif
+export ARCH
+
+UEFI_BUILD_CONFIG := Platforms/$(UEFI_PACKAGE)/PlatformBuild.py
+ifeq ($(ARCH),x86_64)
+ifneq ($(filter secure-services secure-services-test patina-qemu-odp-sp e2e-test windows-acpi-e2e windows-acpi-e2e-all,$(MAKECMDGOALS)),)
+$(error The requested service build/test requires ARCH=aarch64; x86_64 supports baseline UEFI and WinVOS only)
+endif
+endif
 
 REPO_ROOT_IN_HOST := $(shell realpath $(dir $(lastword $(MAKEFILE_LIST))))
 REPO_ROOT_IN_DEVCONTAINER := /workspaces/$(shell basename $(REPO_ROOT_IN_HOST))
@@ -36,7 +53,7 @@ endif
 # Shared across the top-level Makefile, e2e-tests/Makefile, and
 # os-image/Makefile.  Individual targets append pflash drives,
 # serial, display, and any extra device flags.
-BIOS_FV_DIR := mod/uefi/patina-qemu/Build/QemuArmVirtPkg/DEBUG_CLANGPDB/FV
+BIOS_FV_DIR := mod/uefi/patina-qemu/Build/$(UEFI_PACKAGE)/DEBUG_CLANGPDB/FV
 
 # Path to the EC firmware binary (relative to repo root). Built by
 # `make -C mod ec`. Top-level recipes (e2e-test) reference it without

@@ -213,7 +213,7 @@ jobs:
               -Target "${drive}:\GenImage\Configs" | Out-Null
 
             $packagePath = Join-Path $layout 'cabs'
-            cmd /c "${drive}:\GenImage\GenImage.cmd -PackagesList:postbuild\os\prebuilt\armvirt_config.pkg -PackagePath:$packagePath -ImagePath:${drive}:\ -RegistryImport:postbuild\os\prebuilt\armvirt_policy.reg -OutPath:postbuild\os\build -wim -NoWait"
+            cmd /c "${drive}:\GenImage\GenImage.cmd -PackagesList:postbuild\os\prebuilt\winvos_config.pkg -PackagePath:$packagePath -ImagePath:${drive}:\ -RegistryImport:postbuild\os\prebuilt\winvos_policy.reg -OutPath:postbuild\os\build -wim -NoWait"
             if ($LASTEXITCODE -ne 0) { throw "GenImage.cmd failed with exit code $LASTEXITCODE" }
 
             $wim = Get-ChildItem -Path 'postbuild\os\build' -Filter *.wim -File | Select-Object -First 1

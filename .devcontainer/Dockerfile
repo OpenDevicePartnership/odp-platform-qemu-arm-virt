@@ -1,4 +1,4 @@
-# Dockerfile for building/testing the ODP QEMU ARM Virt Platform with GCC.
+# Dockerfile for building/testing the ODP QEMU Platform with GCC.
 #
 # SPDX-License-Identifier: MIT
 #

@@ -1,4 +1,4 @@
-# UEFI firmware build targets for the ODP QEMU ARM Virt Platform.
+# UEFI firmware build targets for the ODP QEMU Platform.
 #
 # SPDX-License-Identifier: MIT
 #
@@ -25,28 +25,46 @@ ODP_E2E_SERIAL0_LOG ?= $(SERIAL0_LOG)
 # the QEMU_PATH build var; the real qemu binary is forwarded via REAL_QEMU.
 QEMU_EC_WRAPPER_DC := $(REPO_ROOT_IN_DEVCONTAINER)/scripts/qemu-ec-wrapper.sh
 
-all: patina-qemu-ec
+QEMU_RUN_ENV = $(if $(ODP_E2E_QEMU_PID_FILE),ODP_E2E_QEMU_PID_FILE=$(ODP_E2E_QEMU_PID_FILE),)
+QEMU_RUN_ARGS = QEMU_PATH=$(QEMU_EC_WRAPPER_DC)
+ifeq ($(ARCH),aarch64)
+QEMU_RUN_ENV += EC_I2C_SOCK=$(EC_I2C_SOCK) EC_GPIO_SOCK=$(EC_GPIO_SOCK) EC_UART_SOCK=$(EC_UART_SOCK) \
+	$(if $(ODP_E2E_EC_PTY),ODP_E2E_EC_PTY=$(ODP_E2E_EC_PTY),) \
+	$(if $(ODP_E2E_SERIAL0_LOG),ODP_E2E_SERIAL0_LOG=$(ODP_E2E_SERIAL0_LOG),)
+QEMU_RUN_ARGS += SERIAL_PORT=56789
+endif
+
+all: $(if $(filter aarch64,$(ARCH)),patina-qemu-odp-sp,patina-qemu-odp)
+
+patina-qemu-prepare: builder-image
+	@$(DC_RUN) -w mod/uefi/patina-qemu -- stuart_setup -c $(UEFI_BUILD_CONFIG)
+	@$(DC_RUN) -w mod/uefi/patina-qemu -- stuart_update -c $(UEFI_BUILD_CONFIG)
 
 # ------------------------------------------------------------
-# Build UEFI without EC Support
+# Build baseline Patina UEFI
 # ------------------------------------------------------------
-patina-qemu: builder-image
-	$(call GROUP,Build UEFI (no EC))
-	@$(DC_RUN) -w mod/uefi/patina-qemu -- stuart_setup -c Platforms/QemuArmVirtPkg/PlatformBuild.py
-	@$(DC_RUN) -w mod/uefi/patina-qemu -- stuart_update -c Platforms/QemuArmVirtPkg/PlatformBuild.py
-	@$(DC_RUN) -w mod/uefi/patina-qemu -- stuart_build -c Platforms/QemuArmVirtPkg/PlatformBuild.py
+patina-qemu: patina-qemu-prepare
+	$(call GROUP,Build baseline UEFI)
+	@$(DC_RUN) -w mod/uefi/patina-qemu -- stuart_build -c $(UEFI_BUILD_CONFIG)
 	$(call ENDGROUP)
 
 # ------------------------------------------------------------
-# Build UEFI with EC Support
+# Build UEFI with the ODP platform overlay
+# ------------------------------------------------------------
+patina-qemu-odp: patina-qemu-prepare
+	$(call GROUP,Build UEFI with ODP overlay)
+	@$(DC_RUN) -w mod/uefi/patina-qemu -- stuart_build -c $(UEFI_BUILD_CONFIG) \
+		FEATURE_CONFIG_PATH=$(REPO_ROOT_IN_DEVCONTAINER)/mod/uefi/platform
+	$(call ENDGROUP)
+
+# ------------------------------------------------------------
+# Build UEFI with the ODP overlay and ARM secure partition
 # ------------------------------------------------------------
 # REPO_ROOT_IN_DEVCONTAINER is referenced for stuart args (paths must be
 # valid inside the container where stuart actually runs).
-patina-qemu-ec: builder-image
-	$(call GROUP,Build UEFI with EC)
-	@$(DC_RUN) -w mod/uefi/patina-qemu -- stuart_setup -c Platforms/QemuArmVirtPkg/PlatformBuild.py
-	@$(DC_RUN) -w mod/uefi/patina-qemu -- stuart_update -c Platforms/QemuArmVirtPkg/PlatformBuild.py
-	@$(DC_RUN) -w mod/uefi/patina-qemu -- stuart_build -c Platforms/QemuArmVirtPkg/PlatformBuild.py \
+patina-qemu-odp-sp: patina-qemu-prepare
+	$(call GROUP,Build UEFI with ODP overlay and ARM secure partition)
+	@$(DC_RUN) -w mod/uefi/patina-qemu -- stuart_build -c $(UEFI_BUILD_CONFIG) \
 		HAF_TFA_BUILD=TRUE \
 		BLD_*_TPM2_ENABLE=TRUE \
 		DISABLE_DEBUG_MACRO_CHECK=TRUE \
@@ -60,21 +78,18 @@ builder-shell: builder-image
 
 run: builder-image
 	@tail_pid=; \
-	if [ -n "$(ODP_E2E_SERIAL0_LOG)" ]; then \
+	if [ "$(ARCH)" = aarch64 ] && [ -n "$(ODP_E2E_SERIAL0_LOG)" ]; then \
 		mkdir -p $(dir $(ODP_E2E_SERIAL0_LOG)); \
 		: > $(ODP_E2E_SERIAL0_LOG); \
 		tail -f $(ODP_E2E_SERIAL0_LOG) & tail_pid=$$!; \
 	fi; \
 	trap 'if [ -n "$$tail_pid" ]; then kill $$tail_pid 2>/dev/null || true; fi' EXIT INT TERM; \
 	$(DC_RUN) -w mod/uefi/patina-qemu -- \
-		env REAL_QEMU=$(QEMU_PATH) EC_I2C_SOCK=$(EC_I2C_SOCK) EC_GPIO_SOCK=$(EC_GPIO_SOCK) EC_UART_SOCK=$(EC_UART_SOCK) QEMU_DISPLAY=$(QEMU_DISPLAY) \
-		$(if $(ODP_E2E_QEMU_PID_FILE),ODP_E2E_QEMU_PID_FILE=$(ODP_E2E_QEMU_PID_FILE),) \
-		$(if $(ODP_E2E_EC_PTY),ODP_E2E_EC_PTY=$(ODP_E2E_EC_PTY),) \
-		$(if $(ODP_E2E_SERIAL0_LOG),ODP_E2E_SERIAL0_LOG=$(ODP_E2E_SERIAL0_LOG),) \
-		stuart_build -c Platforms/QemuArmVirtPkg/PlatformBuild.py --flashonly GDB_SERVER=5555 SERIAL_PORT=56789 PATH_TO_OS=$(PATH_TO_OS) QEMU_PATH=$(QEMU_EC_WRAPPER_DC)
+		env REAL_QEMU=$(QEMU_PATH) QEMU_DISPLAY=$(QEMU_DISPLAY) $(QEMU_RUN_ENV) \
+		stuart_build -c $(UEFI_BUILD_CONFIG) --flashonly GDB_SERVER=5555 PATH_TO_OS=$(PATH_TO_OS) $(QEMU_RUN_ARGS)
 
 clean:
 	@echo "=== Cleaning UEFI build artifacts ==="
 	cd $(REPO_ROOT_IN_HOST)/mod/uefi/patina-qemu && rm -rf Build Conf
 
-.PHONY : all builder-image builder-shell patina-qemu patina-qemu-ec run clean
+.PHONY : all builder-image builder-shell patina-qemu-prepare patina-qemu patina-qemu-odp patina-qemu-odp-sp run clean

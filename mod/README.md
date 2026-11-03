@@ -3,7 +3,7 @@
 ## Overview
 
 This directory contains the platform firmware modules that are built and
-combined to produce the final QEMU ARM Virt firmware image. Each subdirectory
+combined to produce the final QEMU ARM Virt or x64 Q35 firmware image. Each subdirectory
 represents a distinct firmware component with its own build system.
 
 ## Contents
@@ -17,7 +17,7 @@ represents a distinct firmware component with its own build system.
 
 ## Build
 
-All modules are built from the root Makefile:
+All modules are built from the root Makefile for ARM; `ARCH=x86_64` builds only UEFI:
 
 ```bash
 make mod

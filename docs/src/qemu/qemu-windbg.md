@@ -16,11 +16,11 @@ If you want to debug early boot process because it is not making it into NTOS yo
 
 `bcdedit /store BCD /set {globalsettings} bootdebug yes`
 
-Windbg can be connected on  `windbg -k com:ipport=56789,port=127.0.0.1 -v`
+Windbg can be connected on  `windbg -k com:ipport=56789,port=127.0.0.1 -v` (endpoint configured by default for ARM)
 
 ![Windbg QEMU](media/windbg_qemu.png)
 
-## Debugging QEMU with GDB
+## Debugging QEMU with GDB (ARM example)
 When debugging in UEFI, secure world, or when system isn't responding you will often find yourself needing a GDB connection to the device.
 QEMU has built in support for GDB interface and makes it very easy to debug with GDB.
 

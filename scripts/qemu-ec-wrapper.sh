@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thin wrapper around qemu-system-aarch64 that wires in the external embedded
+# Thin wrapper around qemu that wires in the external embedded
 # controller (EC) co-simulation chardev sockets.
 #
 # SPDX-License-Identifier: MIT
@@ -11,8 +11,8 @@
 #
 # Behaviour:
 #   - Forwards all args to the real qemu binary ($REAL_QEMU, default the
-#     devcontainer's /usr/local/bin/qemu-system-aarch64).
-#   - When the EC socket paths are configured (non-empty), appends the three
+#     devcontainer's /usr/local/bin/qemu-system-$ARCH, default ARCH=aarch64).
+#   - On ARM virt, when EC socket paths are configured, appends the three
 #     client chardevs the custom ARM virt machine looks up by id
 #     ("ec-i2c-controller" for the socket-backed I2C controller, "gpio0" for the
 #     PL061 line behind the i2c-hid interrupt, and "ec-uart" for the MCTP
@@ -32,13 +32,22 @@
 
 set -euo pipefail
 
-REAL_QEMU="${REAL_QEMU:-/usr/local/bin/qemu-system-aarch64}"
+ARCH="${ARCH:-aarch64}"
+REAL_QEMU="${REAL_QEMU:-/usr/local/bin/qemu-system-$ARCH}"
 # Use `${VAR-default}` (no colon) so only an *unset* var gets the default path;
 # an explicitly empty var (`make run EC_I2C_SOCK=`) stays empty and disables the
 # corresponding chardev via the `[ -n ]` guards below.
 EC_I2C_SOCK="${EC_I2C_SOCK-/tmp/qemu-ec-i2c.sock}"
 EC_GPIO_SOCK="${EC_GPIO_SOCK-/tmp/qemu-ec-gpio.sock}"
 EC_UART_SOCK="${EC_UART_SOCK-/tmp/qemu-ec-uart.sock}"
+
+# EC comms not yet supported on x86_64
+if [[ "$ARCH" != aarch64 ]]; then
+    EC_I2C_SOCK=""
+    EC_GPIO_SOCK=""
+    EC_UART_SOCK=""
+    unset ODP_E2E_EC_PTY
+fi
 
 # Reconnect retry interval (milliseconds) for the client chardevs. Lets the
 # host survive the EC restarting underneath it and reconnect on its own.

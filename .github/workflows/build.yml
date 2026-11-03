@@ -79,8 +79,12 @@ jobs:
           push: filter
 
   build-test-bios:
-    name: Build & Test QEMU Bios
+    name: Build & Test QEMU Bios (${{ matrix.arch }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [aarch64, x86_64]
     env:
       BRANCH_TAG: ${{ github.head_ref && format('{0}', github.head_ref) || github.ref_name }}
     steps:
@@ -134,6 +138,8 @@ jobs:
             GIT_COMMITTER_EMAIL=vscode@example.com
           runCmd: |
             set -eo pipefail
-            make all
-            make e2e-test QEMU_TIMEOUT=900
+            make all ARCH=${{ matrix.arch }}
+            if [ '${{ matrix.arch }}' = aarch64 ]; then
+              make e2e-test ARCH=aarch64 QEMU_TIMEOUT=900
+            fi
             sccache --show-stats
