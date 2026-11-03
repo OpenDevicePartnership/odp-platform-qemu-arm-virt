@@ -1,9 +1,11 @@
 # ODP QEMU Platform
 
 This book documents the Open Device Partnership reference platform for the
-QEMU arm-virt platform. The repository assembles the platform firmware,
+QEMU arm-virt and x64 Q35 platforms. The repository assembles the platform firmware,
 embedded controller firmware, secure services, UEFI, Windows image, and
 end-to-end tests needed for development and validation.
+
+`ARCH` defaults to `aarch64`; use `ARCH=x86_64` for Q35 firmware and Windows. Secure-service tests are ARM-only.
 
 ## Quick start
 

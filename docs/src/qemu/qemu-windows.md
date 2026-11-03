@@ -11,9 +11,9 @@ Injecting drivers and registry entries into your VHDX image is straight forward 
 
 3. This will execute the installation steps in the INF including copying your driver into the mounted image and updating the registry. Make sure the operation completes successfully. If you have multiple drivers you can use the /Recurse option to install all inf files.
 4. Make sure to cleanly unmount your VHDX drive.
-5. Copy the ValidationOS.vhdx to postbuild/os/prebuilt.
-6. Run `make -C postbuild/os qcow2` to regenerate the qcow file for QEMU.
-7. Run `make run_os` to boot your new windows image.
+5. Copy the ValidationOS.vhdx to `postbuild/os/prebuilt/<arch>`.
+6. Run `make -C postbuild/os qcow2 ARCH=<arch>` to regenerate the qcow file for QEMU.
+7. Run `make run_os ARCH=<arch>` to boot your new windows image.
 
 ## Injecting Executables and Autorun
 

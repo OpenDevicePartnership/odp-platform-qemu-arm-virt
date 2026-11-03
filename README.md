@@ -4,7 +4,9 @@
 [![Check Submodules](https://github.com/OpenDevicePartnership/odp-platform-qemu-arm-virt/actions/workflows/check-submodules.yml/badge.svg)](https://github.com/OpenDevicePartnership/odp-platform-qemu-arm-virt/actions/workflows/check-submodules.yml)
 [![LICENSE](https://img.shields.io/badge/License-MIT-blue)](./LICENSE)
 
-This repo contains all the necessary content for working on QEMU `virt` (arm64) platform
+This repo integrates the QEMU ARM `virt` platform and baseline x64 Q35 firmware
+and Windows Validation OS (WinVOS). ARM includes ODP secure services and EC
+co-simulation; Q35 does not yet include ODP drivers or EC connectivity.
 
 ## Documentation
 
@@ -26,6 +28,38 @@ When prompted select to re-open in a container which will setup all the required
 From VS code menu run  `Terminal -> New Terminal` and run  `make all` from the root to rebuild all components.
 
 To run QEMU with the image you generated you can run `make run` from the root folder
+
+### Architecture Selection
+
+`ARCH` defaults to `aarch64`. Use the same targets for either architecture:
+
+| Command | ARM `virt` | x64 Q35 |
+| --- | --- | --- |
+| Build | `make all` | `make all ARCH=x86_64` |
+| Boot firmware | `make run` | `make run ARCH=x86_64` |
+| Boot WinVOS | `make run_os` | `make run_os ARCH=x86_64` |
+
+An exported selector also works, for example `export ARCH=x86_64` followed
+by `make all`. Build the selected firmware before running it. Switching
+platforms sequentially does not require `make clean`; simultaneous builds in
+one checkout are not supported. `make clean` remains global.
+
+On ARM, `all` builds secure services, EC firmware, UEFI, and E2E applications.
+On x64 it builds only Patina Q35 UEFI, without the ARM ACPI overlay or EC
+wiring. Service builds and functional service tests reject `ARCH=x86_64`.
+The RISC-V EC remains a separate `make run_ec` sidecar.
+
+The VS Code `build`, `run`, `run_os`, and `run_os_windowed` tasks prompt for an
+architecture. The two combined OS/EC tasks also prompt for an architecture;
+the `e2e-test` task is ARM-pinned. `clean` never prompts.
+
+OS downloads and writable disks are separated under
+`postbuild/os/prebuilt/<arch>/` and `postbuild/os/build/<arch>/`.
+The image workflow produces `os-image.zip` and `os-image-x86_64.zip`,
+each containing `os-image.vhdx`. Matching test apps are bundled at `C:\ectest` in both
+images, but app presence does not provide x64 drivers or EC access. See the
+[OS image documentation](postbuild/os/README.md) for image preparation and
+publication prerequisites.
 
 To run end-to-end tests against the secure partition: `make e2e-test`
 (builds everything, runs the EC↔host serial-link smoke test, then

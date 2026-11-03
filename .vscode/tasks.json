@@ -3,9 +3,9 @@
     "tasks": [
         {
             "label": "build",
-            "detail": "Build all firmware artifacts (secure-services, EC, UEFI, e2e-tests) via `make all`.",
+            "detail": "Build all firmware for the selected architecture.",
             "type": "shell",
-            "command": "make all",
+            "command": "make all ARCH=${input:arch}",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -21,9 +21,9 @@
         },
         {
             "label": "run",
-            "detail": "Boot UEFI only (flash-only flow, no OS image) in the ARM QEMU instance.",
+            "detail": "Boot the selected architecture's UEFI (flash-only flow, no OS image).",
             "type": "shell",
-            "command": "make run",
+            "command": "make run ARCH=${input:arch}",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -35,9 +35,9 @@
         },
         {
             "label": "run_os",
-            "detail": "Build the OS image and boot UEFI + Windows in the ARM QEMU instance.",
+            "detail": "Prepare the selected architecture's OS image and boot UEFI + Windows.",
             "type": "shell",
-            "command": "make run_os",
+            "command": "make run_os ARCH=${input:arch}",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -49,9 +49,9 @@
         },
         {
             "label": "run_os_windowed",
-            "detail": "Build the OS image and boot UEFI + Windows in a GTK window.",
+            "detail": "Prepare the selected architecture's OS image and boot UEFI + Windows in a GTK window.",
             "type": "shell",
-            "command": "make run_os QEMU_DISPLAY=gtk",
+            "command": "make run_os QEMU_DISPLAY=gtk ARCH=${input:arch}",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -99,7 +99,7 @@
             "label": "e2e-test",
             "detail": "Run the end-to-end test suite against the secure partition via `make e2e-test`.",
             "type": "shell",
-            "command": "make e2e-test",
+            "command": "make e2e-test ARCH=aarch64",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -123,6 +123,18 @@
                 "reveal": "always"
             },
             "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "arch",
+            "type": "pickString",
+            "description": "QEMU architecture",
+            "options": [
+                "aarch64",
+                "x86_64"
+            ],
+            "default": "aarch64"
         }
     ]
 }

@@ -4,29 +4,29 @@
 
 WinVOS is a pared down Windows OS image that is convenient for basic development while also booting relatively quickly under QEMU.  
 
-The image is built by the `build_os_image` GitHub Actions workflow (`.github/workflows/build-os.yml`), which injects the QEMU drivers listed in `prebuilt/driverlist.txt`. Pull requests build the image for validation only; pushes to `main` and manual runs publish `os-image.zip` as an asset on the rolling `latest` prerelease. The release image intentionally excludes repository ACPI content. Running `make run_os` or `make -C postbuild/os qcow2` downloads the base into `prebuilt/ValidationOS.vhdx`, compiles the current platform ACPI, and injects it into the local `build/winvos.qcow2` overlay. The download is anonymous, so no `gh auth login` is needed. To build manually, download the ISO from https://aka.ms/DownloadValidationOS_arm64.
+The image is built by the `build_os_image` GitHub Actions workflow (`.github/workflows/build-os.yml`), which injects the QEMU drivers listed in `prebuilt/driverlist.txt` for ARM only. Pull requests build the image for validation only; pushes to `main` and manual runs publish `os-image.zip` (ARM) and `os-image-x86_64.zip` (x64) as assets on the rolling `latest` prerelease. The release image intentionally excludes repository ACPI content. Running `make run_os` or `make -C postbuild/os qcow2` downloads the base into `prebuilt/<arch>/ValidationOS.vhdx`, compiles the current platform ACPI for ARM only, and injects it into the local `build/<arch>/winvos.qcow2` overlay. The download is anonymous, so no `gh auth login` is needed. To build manually, download the ISO from https://aka.ms/DownloadValidationOS_arm64 for ARM or https://aka.ms/DownloadValidationOS for x64. `ARCH` defaults to `aarch64`; set it to `x86_64` for Q35.
 
 
-## Booting QEMU `virt` to Windows
+## Booting QEMU to Windows
 
-After you have created a ValidationOS.vhdx with your required files, simply copy it to the prebuilt folder and from the root folder run
-    `make run_os`
+After you have created a ValidationOS.vhdx with your required files, simply copy it to the `prebuilt/<arch>` folder and from the root folder run
+    `make run_os ARCH=<arch>`
 
 This will generate the qcow2 image from the vhdx and run your BIOS in the parent folder path and boot to a command prompt. Your output display will be redirected to VNC port 5900 by default. You can use and VNC Viewer to open the display `127.0.0.1:5900`. 
 
 If you want you can force regeneration of the winvos.qcow2 image using
-    `make -C postbuild/os qcow2`
+    `make -C postbuild/os qcow2 ARCH=<arch>`
 
 ## Connecting with Windbg
 
 GDB server is at:  `127.0.0.1:5555`. 
 
-Windbg can be connected on  `windbg -k com:ipport=56789,port=127.0.0.1 -v`
+Windbg can be connected on  `windbg -k com:ipport=56789,port=127.0.0.1 -v` (serial TCP endpoint configured by default for ARM)
 
 ## Windows ACPI end-to-end tests
 
 From a fresh clone with `git`, `make`, the devcontainer CLI, and a usable
-Docker daemon:
+Docker daemon (ARM only; these targets reject `ARCH=x86_64`):
 
 ```sh
 make windows-acpi-e2e

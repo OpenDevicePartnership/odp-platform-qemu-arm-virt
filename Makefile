@@ -1,4 +1,4 @@
-# Primary Makefile for the ODP QEMU `virt` Platform firmware build system.
+# Primary Makefile for the ODP QEMU Platform firmware build system.
 #
 # SPDX-License-Identifier: MIT
 #
@@ -10,7 +10,7 @@ include Common.mk
 # smoke test + e2e tests against the secure partition).
 # ------------------------------------------------------------
 all: mod
-	$(MAKE) -C e2e-tests build
+	$(if $(filter aarch64,$(ARCH)),$(MAKE) -C e2e-tests build)
 
 # ------------------------------------------------------------
 # mod/ — secure-services, uefi, and ec live under mod/Makefile.
@@ -35,8 +35,8 @@ run:
 # Build OS image and boot it in QEMU
 # ------------------------------------------------------------
 run_os:
-	$(MAKE) -C postbuild/os build/winvos.qcow2
-	$(MAKE) -C mod/uefi run PATH_TO_OS=$(REPO_ROOT_IN_DEVCONTAINER)/postbuild/os/build/winvos.qcow2
+	$(MAKE) -C postbuild/os qcow2
+	$(MAKE) -C mod/uefi run PATH_TO_OS=$(REPO_ROOT_IN_DEVCONTAINER)/postbuild/os/build/$(ARCH)/winvos.qcow2
 
 # ------------------------------------------------------------
 # Run the Windows ACPI end-to-end tests

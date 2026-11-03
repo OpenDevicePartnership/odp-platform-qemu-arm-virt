@@ -115,6 +115,7 @@ dc_flags=(
     --remote-env "GIT_COMMITTER_NAME=vscode"
     --remote-env "GIT_COMMITTER_EMAIL=vscode@example.com"
     --remote-env "DC_RUN_REEXEC=1"
+    --remote-env "ARCH=${ARCH:-aarch64}"
 )
 
 inner=( "${REPO_ROOT_INSIDE}/scripts/dc-run.sh" )

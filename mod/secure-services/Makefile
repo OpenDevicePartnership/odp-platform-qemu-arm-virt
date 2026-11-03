@@ -9,6 +9,12 @@ EC_SECURE_DTS := platform/linker/qemu-ec-sp.dts
 
 include ../../Common.mk
 
+ifneq ($(ARCH),aarch64)
+ifneq ($(if $(MAKECMDGOALS),$(filter-out clean,$(MAKECMDGOALS)),all),)
+$(error Secure services require ARCH=aarch64)
+endif
+endif
+
 # Optional cargo features (e.g. test-bypass-locality-check for e2e tests)
 CARGO_FEATURES ?=
 # Cargo profile to build with (release or coverage)
