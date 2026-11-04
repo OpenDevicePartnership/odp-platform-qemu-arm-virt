@@ -11,7 +11,8 @@
 # release, extracts them to C:\ectest, and matches the payload's `acpi`
 # source contract on ARM64.
 #
-# Currently, AMD64 bundles the apps without ODP driver or EC access until driver support is added.
+# AMD64 bundles the apps for direct EC serial access through the inbox serial
+# driver; ODP driver injection and ACPI service access remain ARM-only.
 #
 # Pull requests build the image for validation only. Every other trigger publishes
 # the stable base used by `make run_os` and `make windows-acpi-e2e`.

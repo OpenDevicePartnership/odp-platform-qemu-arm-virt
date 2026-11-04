@@ -100,12 +100,12 @@ endif
 # ------------------------------------------------------------
 # Run the EC firmware (mod/ec/platform/dev-qemu) in RISC-V QEMU
 # ------------------------------------------------------------
-# Note: This is a separate QEMU instance from the ARM QEMU instance running UEFI+Windows.
+# Note: This is separate from the host QEMU instance running UEFI+Windows.
 #
-# If wanting to connect the ARM QEMU and RISC-V QEMU instances over virtual bus,
-# run `make run_ec` in a separate terminal window alongside `make run_os`.
+# To connect either host architecture to the RISC-V EC over a virtual bus,
+# run `make run_ec` alongside `make run_os ARCH=<arch>` in a separate terminal.
 #
-# Order doesn't matter, the ARM QEMU instance will attempt to reconnect to the
+# Order doesn't matter, the host QEMU instance will attempt to reconnect to the
 # RISC-V QEMU instance periodically. However, of course if Windows attempts to
 # communicate over the virtual bus while not connected to the virtual EC,
 # it will fail.

@@ -18,14 +18,16 @@ The EC binary is built from the `dev-qemu` platform in the [odp-embedded-control
 This is a minimum platform that runs the ODP services using a mock temperature sensor, fan, battery, and real-time clock, along with a HAL written for the RISC-V QEMU `ec` platform to communicate over the virtual UART and I2C buses with the host. This platform can be modified locally during development.
 
 Build and run the virtual EC with `make run_ec`. However, the EC running on its own won't do much.
-To then connect the host, run `make run_os` as mentioned above (in a separate terminal window).
+To then connect the host, run `make run_os` for ARM or `make run_os ARCH=x86_64` for Q35
+as mentioned above (in a separate terminal window).
 The EC QEMU instance creates the sockets and the host connects to them, but the order you run these in
 does not matter since the host will attempt to reconnect periodically to the EC if it's not available.
 
-If using VS Code, you can also run either the `run_os_ec` task (for the default headless host) or `run_os_ec_windowed` (for a GTK window).
+If using VS Code, you can also run either the `run_os_ec` task (for the default headless host) or `run_os_ec_windowed` (for a GTK window), and select the host architecture when prompted.
 
 From within Windows running on the host QEMU instance, you can verify the connection is successful by following these steps:
 
 - Run `cd C:\ectest`
-- Run `ec-test-tui.exe --source acpi`
+- On ARM, run `ec-test-tui.exe --source acpi`.
+- On Q35, run `ec-test-tui.exe --source serial --port COM3`.
 - Verify all tabs show green (successful) status, indicating the host is sending commands to the EC and receiving data.

@@ -16,7 +16,7 @@ export ARCH
 UEFI_BUILD_CONFIG := Platforms/$(UEFI_PACKAGE)/PlatformBuild.py
 ifeq ($(ARCH),x86_64)
 ifneq ($(filter secure-services secure-services-test patina-qemu-odp-sp e2e-test windows-acpi-e2e windows-acpi-e2e-all,$(MAKECMDGOALS)),)
-$(error The requested service build/test requires ARCH=aarch64; x86_64 supports baseline UEFI and WinVOS only)
+$(error The requested service build/test requires ARCH=aarch64)
 endif
 endif
 
@@ -60,9 +60,9 @@ BIOS_FV_DIR := mod/uefi/patina-qemu/Build/$(UEFI_PACKAGE)/DEBUG_CLANGPDB/FV
 # owning the build rule.
 EC_BINARY := mod/ec/platform/dev-qemu/target/riscv32imac-unknown-none-elf/release/dev-qemu
 
-# Shared endpoints for the ARM host and RISC-V EC QEMU instances. The EC owns
-# the socket servers; the host connects as a client. Command-line overrides
-# propagate through recursive Make invocations.
+# Shared endpoints for host and RISC-V EC QEMU instances. Both host architectures
+# use the UART socket; I2C/GPIO remain ARM-only. The EC owns the socket servers;
+# the host connects as a client. Overrides propagate through recursive Make.
 EC_I2C_SOCK ?= /tmp/qemu-ec-i2c.sock
 EC_GPIO_SOCK ?= /tmp/qemu-ec-gpio.sock
 EC_UART_SOCK ?= /tmp/qemu-ec-uart.sock
