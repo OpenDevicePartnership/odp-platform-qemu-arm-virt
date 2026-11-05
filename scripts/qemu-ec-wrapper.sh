@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MIT
 #
 # This lives in *this* repo (not the patina-qemu submodule) so the EC<->host
-# virtual I2C/GPIO wiring is reproducible without patching patina's QemuRunner
+# co-simulation wiring is reproducible without patching patina's QemuRunner
 # plugin. `make run` passes this script as the QEMU_PATH build var; patina's
 # QemuRunner then invokes it exactly like the real qemu binary.
 #
@@ -27,6 +27,10 @@
 #     (plain `make run` with no EC), set the paths empty
 #     (`make run EC_I2C_SOCK= EC_GPIO_SOCK= EC_UART_SOCK=`); then nothing is
 #     appended and qemu boots normally.
+#   - On Q35, connects EC_UART_SOCK to a third ISA UART (0x3e8, IRQ 4),
+#     exposed to Windows as a normal serial port. COM1/COM2 remain available
+#     for firmware consoles. Set EC_UART_SOCK= to disable the EC connection.
+#     I2C/GPIO wiring remains ARM-only.
 #   - Passes through untouched for `--version`/`-version` probes so patina's
 #     QueryQemuVersion keeps working.
 
@@ -41,11 +45,10 @@ EC_I2C_SOCK="${EC_I2C_SOCK-/tmp/qemu-ec-i2c.sock}"
 EC_GPIO_SOCK="${EC_GPIO_SOCK-/tmp/qemu-ec-gpio.sock}"
 EC_UART_SOCK="${EC_UART_SOCK-/tmp/qemu-ec-uart.sock}"
 
-# EC comms not yet supported on x86_64
+# Only the UART connection is supported on x86_64.
 if [[ "$ARCH" != aarch64 ]]; then
     EC_I2C_SOCK=""
     EC_GPIO_SOCK=""
-    EC_UART_SOCK=""
     unset ODP_E2E_EC_PTY
 fi
 
@@ -86,11 +89,11 @@ while [ "$#" -gt 0 ]; do
     if [ "$1" = -serial ] && [ "$#" -ge 2 ]; then
         serial_index=$((serial_index + 1))
         serial_backend="$2"
-        if [ "$serial_index" = 1 ] && [ -n "${ODP_E2E_SERIAL0_LOG:-}" ] \
+        if [[ "$ARCH" == aarch64 && "$serial_index" == 1 ]] && [ -n "${ODP_E2E_SERIAL0_LOG:-}" ] \
             && [ "$serial_backend" = stdio ]; then
             serial_backend="file:$ODP_E2E_SERIAL0_LOG"
         fi
-        if [ "$serial_index" = 2 ] && { [ "${ODP_E2E_EC_PTY+x}" = x ] || [ -n "$EC_UART_SOCK" ]; }; then
+        if [[ "$ARCH" == aarch64 && "$serial_index" == 2 ]] && { [ "${ODP_E2E_EC_PTY+x}" = x ] || [ -n "$EC_UART_SOCK" ]; }; then
             secure_serial="$serial_backend"
         else
             qemu_args+=(-serial "$serial_backend")
@@ -127,9 +130,13 @@ if [ "${ODP_E2E_EC_PTY+x}" = x ]; then
 elif [ -n "$EC_UART_SOCK" ]; then
     extra+=(
         -chardev "socket,id=ec-uart,path=${EC_UART_SOCK},server=off,reconnect-ms=${EC_RECONNECT_MS}"
-        -serial "chardev:ec-uart"
     )
-    [ -z "$secure_serial" ] || extra+=(-serial "$secure_serial")
+    if [[ "$ARCH" == x86_64 ]]; then
+        extra+=(-device "isa-serial,index=2,chardev=ec-uart")
+    else
+        extra+=(-serial "chardev:ec-uart")
+        [ -z "$secure_serial" ] || extra+=(-serial "$secure_serial")
+    fi
 fi
 
 if [ "${ODP_E2E_QEMU_PID_FILE+x}" = x ]; then

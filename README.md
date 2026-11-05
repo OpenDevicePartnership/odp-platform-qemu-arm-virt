@@ -4,9 +4,10 @@
 [![Check Submodules](https://github.com/OpenDevicePartnership/odp-platform-qemu-arm-virt/actions/workflows/check-submodules.yml/badge.svg)](https://github.com/OpenDevicePartnership/odp-platform-qemu-arm-virt/actions/workflows/check-submodules.yml)
 [![LICENSE](https://img.shields.io/badge/License-MIT-blue)](./LICENSE)
 
-This repo integrates the QEMU ARM `virt` platform and baseline x64 Q35 firmware
+This repo integrates the QEMU ARM `virt` platform and x64 Q35 firmware
 and Windows Validation OS (WinVOS). ARM includes ODP secure services and EC
-co-simulation; Q35 does not yet include ODP drivers or EC connectivity.
+co-simulation; Q35 supports direct EC serial access through the Windows inbox
+serial driver, without ODP ACPI service or HID-over-I2C support.
 
 ## Documentation
 
@@ -45,8 +46,8 @@ platforms sequentially does not require `make clean`; simultaneous builds in
 one checkout are not supported. `make clean` remains global.
 
 On ARM, `all` builds secure services, EC firmware, UEFI, and E2E applications.
-On x64 it builds only Patina Q35 UEFI, without the ARM ACPI overlay or EC
-wiring. Service builds and functional service tests reject `ARCH=x86_64`.
+On x64 it builds only Patina Q35 UEFI, without the ARM ACPI overlay.
+Service builds and functional service tests reject `ARCH=x86_64`.
 The RISC-V EC remains a separate `make run_ec` sidecar.
 
 The VS Code `build`, `run`, `run_os`, and `run_os_windowed` tasks prompt for an
@@ -57,7 +58,8 @@ OS downloads and writable disks are separated under
 `postbuild/os/prebuilt/<arch>/` and `postbuild/os/build/<arch>/`.
 The image workflow produces `os-image.zip` and `os-image-x86_64.zip`,
 each containing `os-image.vhdx`. Matching test apps are bundled at `C:\ectest` in both
-images, but app presence does not provide x64 drivers or EC access. See the
+images. Q35 direct serial access uses the inbox serial driver; ODP driver
+injection and ACPI service access remain ARM-only. See the
 [OS image documentation](postbuild/os/README.md) for image preparation and
 publication prerequisites.
 
