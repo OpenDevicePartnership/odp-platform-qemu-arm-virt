@@ -1,0 +1,6 @@
+# Each non-comment line is a release asset name without the .zip extension.
+# The build-os workflow appends .zip and downloads it from the latest release of
+# OpenDevicePartnership/odp-windows-drivers, then injects its drivers into AMD64 WinVOS.
+driver-pl061gpio-x64-Release
+driver-qemui2c-x64-Release
+driver-HIDTime-x64-Release

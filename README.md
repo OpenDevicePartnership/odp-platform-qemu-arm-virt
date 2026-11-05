@@ -57,9 +57,9 @@ the `e2e-test` task is ARM-pinned. `clean` never prompts.
 OS downloads and writable disks are separated under
 `postbuild/os/prebuilt/<arch>/` and `postbuild/os/build/<arch>/`.
 The image workflow produces `os-image.zip` and `os-image-x86_64.zip`,
-each containing `os-image.vhdx`. Matching test apps are bundled at `C:\ectest` in both
-images. Q35 direct serial access uses the inbox serial driver; ODP driver
-injection and ACPI service access remain ARM-only. See the
+each containing `os-image.vhdx`. Matching ODP drivers are staged in both images,
+and test apps are bundled at `C:\ectest`. Q35 direct serial access uses the inbox
+serial driver; ODP ACPI service access remains ARM-only. See the
 [OS image documentation](postbuild/os/README.md) for image preparation and
 publication prerequisites.
 

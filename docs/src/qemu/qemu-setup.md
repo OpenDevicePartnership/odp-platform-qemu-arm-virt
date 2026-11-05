@@ -8,7 +8,7 @@ This section covers how to setup QEMU (for the host and EC) and boot the windows
 
 ## Running QEMU with Windows
 
-The windows image generation is done by `.github/workflows/build-os.yml`. This downloads the latest version of Validation OS and injects the required drivers for ARM only into a reusable base image. On pushes to `main` the image is zipped and published as the `os-image.zip` (ARM) or `os-image-x86_64.zip` (x64) asset on the rolling `latest` prerelease; pull requests only build it for validation. Running `make run_os` downloads that ACPI-free base, compiles the current platform ACPI and injects it into a local qcow2 overlay for ARM only, and boots the overlay.
+The windows image generation is done by `.github/workflows/build-os.yml`. This downloads the latest version of Validation OS and injects the required drivers for ARM and x64 into a reusable base image. On pushes to `main` the image is zipped and published as the `os-image.zip` (ARM) or `os-image-x86_64.zip` (x64) asset on the rolling `latest` prerelease; pull requests only build it for validation. Running `make run_os` downloads that ACPI-free base, compiles the current platform ACPI and injects it into a local qcow2 overlay for ARM only, and boots the overlay.
 
 If you want to create your own windows image you can modify the one downloaded at `postbuild/os/prebuilt/<arch>/ValidationOS.vhdx` and place your updated image there.
 

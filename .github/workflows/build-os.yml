@@ -3,16 +3,16 @@
 # SPDX-License-Identifier: MIT
 #
 # Downloads pre-built driver assets from the latest odp-windows-drivers release,
-# unzips them, builds a Validation OS WIM, injects the QEMU drivers on ARM64 only,
+# unzips them, builds a Validation OS WIM, injects the drivers for each architecture,
 # and converts the result to VHDX. The list of driver assets to download is
-# maintained in postbuild/os/prebuilt/driverlist.txt. AMD64 skips driver injection.
+# maintained in postbuild/os/prebuilt/<arch>/driverlist.txt.
 #
 # It also downloads the EC test apps from the latest odp-platform-common
 # release, extracts them to C:\ectest, and matches the payload's `acpi`
 # source contract on ARM64.
 #
 # AMD64 bundles the apps for direct EC serial access through the inbox serial
-# driver; ODP driver injection and ACPI service access remain ARM-only.
+# driver; ODP ACPI service access remains ARM-only.
 #
 # Pull requests build the image for validation only. Every other trigger publishes
 # the stable base used by `make run_os` and `make windows-acpi-e2e`.
@@ -84,7 +84,7 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
-    name: Build QEMU ${{ matrix.platform }} OS image
+    name: Build QEMU ${{ matrix.driver_arch }} OS image
     timeout-minutes: 30
     permissions:
       contents: write
@@ -92,17 +92,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: ARM64
+          - driver_arch: aarch64
             minimum_build: 28000
             iso_url: https://aka.ms/DownloadValidationOS_26H1_arm64
             app_asset: ec-test-apps-ARM64.zip
-            inject_drivers: true
             release_asset: os-image.zip
-          - platform: x86_64
+          - driver_arch: x86_64
             minimum_build: 26100
             iso_url: https://aka.ms/DownloadValidationOS
             app_asset: ec-test-apps-x86_64.zip
-            inject_drivers: false # Temporary until driver support is added for AMD64
             release_asset: os-image-x86_64.zip
     defaults:
       run:
@@ -114,17 +112,14 @@ jobs:
           ref: ${{ inputs.git_ref || github.ref }}
 
       - name: Resolve driver assets
-        if: matrix.inject_drivers
         run: |
-          $assetNames = Get-Content -Path 'postbuild\os\prebuilt\driverlist.txt' |
+          $driverList = 'postbuild/os/prebuilt/${{ matrix.driver_arch }}/driverlist.txt'
+          $assetNames = Get-Content -Path $driverList |
             ForEach-Object { $_.Trim() } |
             Where-Object { $_ -and -not $_.StartsWith('#') }
 
           if (-not $assetNames) {
-            throw 'No driver names found in postbuild\os\prebuilt\driverlist.txt'
-          }
-          if ($assetNames -notcontains 'driver-ectest_kmdf-ARM64-Release') {
-            throw 'Stable base requires driver-ectest_kmdf-ARM64-Release'
+            throw "No driver names found in $driverList"
           }
 
           $assetNamesFile = Join-Path $env:RUNNER_TEMP 'asset-names.txt'
@@ -132,7 +127,6 @@ jobs:
           "DRIVER_ASSET_NAMES_FILE=$assetNamesFile" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Download driver assets
-        if: matrix.inject_drivers
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -254,24 +248,21 @@ jobs:
 
           New-Item -ItemType Directory -Path $mountPath -Force | Out-Null
 
-          $infPaths = @()
-          if ('${{ matrix.inject_drivers }}' -eq 'true') {
-            if (-not (Test-Path $env:DRIVER_ASSET_NAMES_FILE)) {
-              throw "Driver asset list '$env:DRIVER_ASSET_NAMES_FILE' does not exist"
-            }
-            $assetNames = Get-Content -Path $env:DRIVER_ASSET_NAMES_FILE
-            $driverRoots = $assetNames | ForEach-Object { Resolve-Path (Join-Path 'drivers' $_) }
-            if (-not $driverRoots) {
-              throw "No driver paths resolved from $env:DRIVER_ASSET_NAMES_FILE"
-            }
-            $infPaths = foreach ($driverRoot in $driverRoots) {
-              Get-ChildItem -Path $driverRoot -Recurse -Filter *.inf -File
-            }
-            if (-not $infPaths) {
-              throw "No INF files found for any driver listed in $env:DRIVER_ASSET_NAMES_FILE"
-            }
-            $infPaths = $infPaths | Sort-Object FullName -Unique
+          if (-not (Test-Path $env:DRIVER_ASSET_NAMES_FILE)) {
+            throw "Driver asset list '$env:DRIVER_ASSET_NAMES_FILE' does not exist"
           }
+          $assetNames = Get-Content -Path $env:DRIVER_ASSET_NAMES_FILE
+          $driverRoots = $assetNames | ForEach-Object { Resolve-Path (Join-Path 'drivers' $_) }
+          if (-not $driverRoots) {
+            throw "No driver paths resolved from $env:DRIVER_ASSET_NAMES_FILE"
+          }
+          $infPaths = foreach ($driverRoot in $driverRoots) {
+            Get-ChildItem -Path $driverRoot -Recurse -Filter *.inf -File
+          }
+          if (-not $infPaths) {
+            throw "No INF files found for any driver listed in $env:DRIVER_ASSET_NAMES_FILE"
+          }
+          $infPaths = $infPaths | Sort-Object FullName -Unique
 
           try {
             dism.exe /Mount-Image /ImageFile:$wimPath /Index:1 /MountDir:$mountPath
@@ -381,7 +372,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Failed to upload ${{ matrix.release_asset }} to the latest release." }
 
       - name: Upload E2E base
-        if: github.event_name == 'pull_request' && matrix.platform == 'ARM64'
+        if: github.event_name == 'pull_request' && matrix.driver_arch == 'aarch64'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: windows-acpi-e2e-base
