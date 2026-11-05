@@ -270,7 +270,7 @@ jobs:
 
             foreach ($infPath in $infPaths) {
               Write-Host "Injecting driver $($infPath.FullName)"
-              dism.exe /Image:$mountPath /Add-Driver /Driver:$($infPath.FullName)
+              dism.exe /Image:$mountPath /Add-Driver /Driver:$($infPath.FullName) /ForceUnsigned
               if ($LASTEXITCODE -ne 0) { throw "Failed to add driver $($infPath.FullName) with exit code $LASTEXITCODE" }
             }
 
