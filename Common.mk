@@ -61,7 +61,7 @@ BIOS_FV_DIR := mod/uefi/patina-qemu/Build/$(UEFI_PACKAGE)/DEBUG_CLANGPDB/FV
 EC_BINARY := mod/ec/platform/dev-qemu/target/riscv32imac-unknown-none-elf/release/dev-qemu
 
 # Shared endpoints for host and RISC-V EC QEMU instances. Both host architectures
-# use the UART socket; I2C/GPIO remain ARM-only. The EC owns the socket servers;
+# use the UART, I2C, and GPIO sockets. The EC owns the socket servers;
 # the host connects as a client. Overrides propagate through recursive Make.
 EC_I2C_SOCK ?= /tmp/qemu-ec-i2c.sock
 EC_GPIO_SOCK ?= /tmp/qemu-ec-gpio.sock

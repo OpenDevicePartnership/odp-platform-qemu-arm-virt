@@ -5,9 +5,8 @@
 This module builds Patina UEFI for ARM `virt` (`ARCH=aarch64`, the default)
 and x64 Q35 (`ARCH=x86_64`). ARM includes the ODP ACPI overlay, secure
 services, and EC wiring. Q35 uses Patina's existing configuration and runner
-without an ODP ACPI overlay or secure services. The QEMU wrapper connects a
-dedicated Q35 UART to the EC for Windows user-mode `--source serial` access;
-HID-over-I2C and ODP ACPI service access remain ARM-only.
+without secure services. The QEMU wrapper connects a
+dedicated Q35 UART to the EC for Windows user-mode `--source serial` access.
 
 ## Contents
 
