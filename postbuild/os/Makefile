@@ -18,7 +18,8 @@ OS_IMAGE_ASSET_FILE ?= os-image.vhdx
 OS_IMAGE_REPO ?= OpenDevicePartnership/odp-platform-qemu-arm-virt
 
 ACPI_TABLES_DIR := ../../mod/uefi/platform/$(UEFI_PACKAGE)/AcpiTables
-ACPI_TABLE_SOURCES := $(wildcard $(ACPI_TABLES_DIR)/*.asl)
+ACPI_TABLE_SOURCES := $(wildcard $(ACPI_TABLES_DIR)/*.asl \
+	../../mod/uefi/platform/AcpiTables/*.asl)
 ACPI_TABLE_OUTPUT := build/$(ARCH)/acpi/ACPITABL.dat
 
 BIOS_FLASH0 := ../../$(BIOS_FV_DIR)/SECURE_FLASH0.fd
@@ -59,12 +60,8 @@ $(ACPI_TABLE_OUTPUT): $(ACPI_TABLE_SOURCES)
 	iasl -tc -p $(dir $@)ec -I $(ACPI_TABLES_DIR) $(ACPI_TABLES_DIR)/ec.asl
 	cp $(dir $@)ec.aml $@
 
-# Revisit: When x86 has ACPI tables, this will be required unconditionally
-ifeq ($(ARCH),aarch64)
 $(OS_IMAGE_OUTPUT): $(ACPI_TABLE_OUTPUT)
-endif
 
-# Revisit: When x86 has ACPI tables, this will be required unconditionally
 $(OS_IMAGE_OUTPUT): $(OS_IMAGE_INPUT)
 	@set -eu; \
 	mkdir -p $(dir $@); \
@@ -73,7 +70,7 @@ $(OS_IMAGE_OUTPUT): $(OS_IMAGE_INPUT)
 	rm -f "$$temporary"; \
 	trap 'rm -f "$$temporary"' EXIT; \
 	qemu-img create -q -f qcow2 -F vhdx -b "../../$(OS_IMAGE_INPUT)" "$$temporary"; \
-	$(if $(filter aarch64,$(ARCH)),guestfish -a "$$temporary" -i upload "$(abspath $(ACPI_TABLE_OUTPUT))" /Windows/System32/ACPITABL.dat;,) \
+	guestfish -a "$$temporary" -i upload "$(abspath $(ACPI_TABLE_OUTPUT))" /Windows/System32/ACPITABL.dat; \
 	mv "$$temporary" $(notdir $@); \
 	trap - EXIT
 
