@@ -12,8 +12,8 @@
 # Behaviour:
 #   - Forwards all args to the real qemu binary ($REAL_QEMU, default the
 #     devcontainer's /usr/local/bin/qemu-system-$ARCH, default ARCH=aarch64).
-#   - On ARM virt, when EC socket paths are configured, appends the three
-#     client chardevs the custom ARM virt machine looks up by id
+#   - When the EC socket paths are configured, appends the three
+#     client chardevs the custom machines look up by id
 #     ("ec-i2c-controller" for the socket-backed I2C controller, "gpio0" for the
 #     PL061 line behind the i2c-hid interrupt, and "ec-uart" for the MCTP
 #     transport). The EC QEMU instance creates these socket *servers*; we connect
@@ -30,7 +30,6 @@
 #   - On Q35, connects EC_UART_SOCK to a third ISA UART (0x3e8, IRQ 4),
 #     exposed to Windows as a normal serial port. COM1/COM2 remain available
 #     for firmware consoles. Set EC_UART_SOCK= to disable the EC connection.
-#     I2C/GPIO wiring remains ARM-only.
 #   - Passes through untouched for `--version`/`-version` probes so patina's
 #     QueryQemuVersion keeps working.
 
@@ -45,10 +44,8 @@ EC_I2C_SOCK="${EC_I2C_SOCK-/tmp/qemu-ec-i2c.sock}"
 EC_GPIO_SOCK="${EC_GPIO_SOCK-/tmp/qemu-ec-gpio.sock}"
 EC_UART_SOCK="${EC_UART_SOCK-/tmp/qemu-ec-uart.sock}"
 
-# Only the UART connection is supported on x86_64.
+# The secure-UART PTY override is ARM-only.
 if [[ "$ARCH" != aarch64 ]]; then
-    EC_I2C_SOCK=""
-    EC_GPIO_SOCK=""
     unset ODP_E2E_EC_PTY
 fi
 

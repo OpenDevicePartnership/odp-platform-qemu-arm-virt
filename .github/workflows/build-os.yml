@@ -11,9 +11,6 @@
 # release, extracts them to C:\ectest, and matches the payload's `acpi`
 # source contract on ARM64.
 #
-# AMD64 bundles the apps for direct EC serial access through the inbox serial
-# driver; ODP ACPI service access remains ARM-only.
-#
 # Pull requests build the image for validation only. Every other trigger publishes
 # the stable base used by `make run_os` and `make windows-acpi-e2e`.
 #
@@ -35,7 +32,9 @@ on:
       - 'Makefile'
       - 'mod/Makefile'
       - 'mod/uefi/Makefile'
+      - 'mod/uefi/platform/AcpiTables/**'
       - 'mod/uefi/platform/QemuArmVirtPkg/AcpiTables/**'
+      - 'mod/uefi/platform/QemuQ35Pkg/AcpiTables/**'
       - 'postbuild/os/**'
       - 'scripts/lib/ec-qemu.sh'
       - 'scripts/qemu-ec-wrapper.sh'

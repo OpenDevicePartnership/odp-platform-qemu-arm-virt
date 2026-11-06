@@ -7,7 +7,7 @@ ODP provides a fully virtual embedded controller modeled on a QEMU 32-bit RISC-V
 
 These virtual peripherals present a memory-mapped register interface to the EC, just like real hardware, but send data over a socket acting as the virtual wire.
 
-Along with a host OS running inside an ARM `virt` or x64 Q35 QEMU instance, this enables a completely virtual end-to-end development environment. ARM supports ODP ACPI services and HID-over-I2C; Q35 supports direct Windows user-mode serial access to the EC.
+Along with a host OS running inside an ARM `virt` or x64 `Q35` QEMU instance, this enables a completely virtual end-to-end development environment.
 
 ## What this is not
 The intent of this virtual EC is to aid in the development and testing of **application logic** sitting on top of hardware.
@@ -38,7 +38,7 @@ Once you have the repo cloned and the devcontainer set up, you can verify host-t
 
 ### x86_64 Q35
 
-You can also talk to the EC from an x86_64 Q35 host, but currently only over the virtual UART bus. Unlike ARM, this exposes a COM port directly to Windows, so the apps use `--source serial` instead of `--source acpi`:
+You can also talk to the EC from an x86_64 Q35 host over the virtual UART bus. Unlike ARM, this exposes a COM port directly to Windows, so the apps use `--source serial` instead of `--source acpi`:
 
 - Run `make all ARCH=x86_64` to build the Q35 UEFI firmware.
 - Run `make run_ec` to build and start the same RISC-V EC instance used with ARM.
@@ -47,7 +47,7 @@ You can also talk to the EC from an x86_64 Q35 host, but currently only over the
 - Run `ec-test-tui.exe --source serial --port COM3`. If everything is working correctly, you should see the TUI app open with thermal, battery, and time-alarm data from the EC.
 - To test an individual service, run a CLI command such as `ec-test-cli.exe --source serial --port COM3 rtc get-real-time`. Close the TUI first, since only one app can use the COM port at a time.
 
-Virtual I2C/GPIO communication is not yet supported on Q35.
+For HID-over-I2C, use `ec-test-cli.exe --source windows rtc get-real-time`, as on ARM.
 
 If everything is working, then you have successfully set up your environment and can begin developing on your own. The best way to start is by navigating to `mod/ec/platform/dev-qemu/src` to see the current, basic reference implementation provided by ODP and start tweaking it to suit your needs. Running `make run_ec` again will build and launch your changes, and you can continue using the test apps running in the host QEMU instance to test your changes.
 
@@ -60,12 +60,12 @@ At its core is a modified QEMU binary which adds a few nice features:
 - An emulated I2C controller peripheral
 - An emulated GPIO peripheral
 - A new RISC-V `ec` machine which wires up the I2C target and GPIO peripherals as memory-mapped registers
-- A modified ARM `virt` machine which additionally wires up the I2C controller and GPIO peripherals as memory-mapped registers
+- Modified ARM `virt` and x64 Q35 machines which additionally wire up the I2C controller and GPIO peripherals as memory-mapped registers
 
-The important thing to note is that the peripherals expose a socket allowing two QEMU instances or any other external program to connect. This is what enables the QEMU ARM host machine to connect its virtual I2C controller peripheral to the QEMU EC machine's virtual I2C target peripheral. This mirrors how the existing virtual UART peripherals in QEMU work.
+The important thing to note is that the peripherals expose a socket allowing two QEMU instances or any other external program to connect. This is what enables the QEMU host machine to connect its virtual I2C controller peripheral to the QEMU EC machine's virtual I2C target peripheral. This mirrors how the existing virtual UART peripherals in QEMU work.
 
 Q35 uses QEMU's existing ISA UART model and the EC UART socket, without changes
-to QEMU or the EC firmware. Its I2C/GPIO connections remain unsupported.
+to QEMU or the EC firmware for serial access. Its I2C/GPIO connection uses the same ODP models as ARM `virt`.
 
 Fortunately, knowing the nitty-gritty of how this works isn't required if you just want to get started developing your EC application logic. For those who are curious or need to modify QEMU themselves, the relevant repos and details are included below:
 
