@@ -4,10 +4,8 @@
 [![Check Submodules](https://github.com/OpenDevicePartnership/odp-platform-qemu-arm-virt/actions/workflows/check-submodules.yml/badge.svg)](https://github.com/OpenDevicePartnership/odp-platform-qemu-arm-virt/actions/workflows/check-submodules.yml)
 [![LICENSE](https://img.shields.io/badge/License-MIT-blue)](./LICENSE)
 
-This repo integrates the QEMU ARM `virt` platform and x64 Q35 firmware
-and Windows Validation OS (WinVOS). ARM includes ODP secure services and EC
-co-simulation; Q35 supports direct EC serial access through the Windows inbox
-serial driver, without ODP ACPI service or HID-over-I2C support.
+This repo supports EC co-simulation on QEMU ARM `virt` and x64 Q35.
+ODP secure services are ARM-only.
 
 ## Documentation
 
@@ -46,7 +44,8 @@ platforms sequentially does not require `make clean`; simultaneous builds in
 one checkout are not supported. `make clean` remains global.
 
 On ARM, `all` builds secure services, EC firmware, UEFI, and E2E applications.
-On x64 it builds only Patina Q35 UEFI, without the ARM ACPI overlay.
+On x64 it builds only Patina Q35 UEFI. Both `run_os` flows install their
+architecture's ACPI overlay; Q35 uses a HID-only SSDT.
 Service builds and functional service tests reject `ARCH=x86_64`.
 The RISC-V EC remains a separate `make run_ec` sidecar.
 
