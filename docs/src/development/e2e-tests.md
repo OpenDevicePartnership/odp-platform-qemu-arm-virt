@@ -154,9 +154,9 @@ make e2e-test
 ### TimeAlarm CPU-retention fixture
 
 Opt-in `time_alarm_retention.efi` tests **firmware CPU standby, not OS sleep or
-system suspend**; it is outside `make e2e-test`. Build wake-capable EC/library,
-GPIO1-capable QEMU and PL061-mapped Patina with the **normal relay SP**, not
-`secure-services-test`. The runner never updates these prerequisites.
+system suspend**; it is outside `make e2e-test`. Build wake-capable EC/library
+and PL061-mapped Patina with the **normal relay SP**, not `secure-services-test`;
+the devcontainer's EC QEMU provides GPIO1. The runner never updates these prerequisites.
 
 ```bash
 # Compile only; does not build EC/UEFI or start QEMU.
@@ -168,7 +168,7 @@ make -C e2e-tests retention-run TIME_ALARM_SOURCE=dc TIME_ALARM_WIRE=disconnecte
 Mandatory `TIME_ALARM_SOURCE=ac|dc` builds separate `time-alarm-wake` EC fixtures
 using `ODP_WAKE_SOURCE`, not source detection or a fallback. Run both sources
 with both `TIME_ALARM_WIRE=connected|disconnected` (default: connected).
-`RETENTION_EC_QEMU=/path/to/bin/qemu-system-riscv32` selects an isolated EC QEMU
+`RETENTION_EC_QEMU=/path/to/bin/qemu-system-riscv32` optionally selects another EC QEMU
 whose install prefix must exist in the devcontainer; do not change host `PATH`.
 Logs/vdrives remain in `e2e-tests/Build/retention/`.
 
@@ -188,15 +188,13 @@ Host-only checks: from `e2e-tests/`, compile
 ### Emulated runtime power-input command-path test
 
 `retention-power-input` reuses the same EFI and normal FF-A/SP/EC commands.
-It needs the GPIO2 model and EC `time-alarm-power-input` feature. It builds
+It needs the EC `time-alarm-power-input` feature and the devcontainer's GPIO2 model. It builds
 one runtime-input EC artifact, without `ODP_WAKE_SOURCE`; `TIME_ALARM_SOURCE`
 selects the model's explicit cold-start seed, not a compile-time fallback.
 
 ```bash
-make -C e2e-tests retention-power-input TIME_ALARM_SOURCE=ac \
-  RETENTION_EC_QEMU=/path/to/gpio2-enabled/qemu-system-riscv32
-make -C e2e-tests retention-power-input TIME_ALARM_SOURCE=dc \
-  RETENTION_EC_QEMU=/path/to/gpio2-enabled/qemu-system-riscv32
+make -C e2e-tests retention-power-input TIME_ALARM_SOURCE=ac
+make -C e2e-tests retention-power-input TIME_ALARM_SOURCE=dc
 ```
 
 The runner supplies `odp-gpio.input-reset-mask=4` and `input-reset=4` (AC)
